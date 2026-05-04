@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>LEAN FORGE | Training Log</title>
-    <!-- 安定版のライブラリを使用 -->
+    <!-- ライブラリ読み込み。crossoriginを付けてエラーを見えやすくします -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -20,51 +20,35 @@
 </head>
 <body>
     <div id="root">
-        <!-- 起動画面 -->
+        <!-- 起動待機画面 -->
         <div class="flex flex-col items-center justify-center h-screen p-10 text-center">
             <div id="spinner" class="animate-spin rounded-full h-14 w-14 border-t-2 border-blue-500 mb-8 shadow-lg shadow-blue-500/20"></div>
             <h1 class="text-4xl font-black italic tracking-tighter mb-4 uppercase">Lean Forge</h1>
-            <p id="status-text" class="text-xs font-bold text-slate-500 uppercase tracking-[0.4em]">Finalizing System v2.1...</p>
+            <p id="status-text" class="text-xs font-bold text-slate-500 uppercase tracking-[0.4em]">Waiting for System Assets...</p>
         </div>
     </div>
 
-    <!-- システムタグ（これが見えれば上書き成功） -->
+    <!-- システムタグ（v2.2が見えればOK） -->
     <div id="version-tag" style="position: fixed; bottom: 10px; left: 10px; font-size: 9px; font-weight: 900; color: #3b82f6; z-index: 100; opacity: 0.5;">
-        ULTRA_STABLE: v2.1_FINAL
+        ULTRA_COMPATIBLE: v2.2_FINAL_SET
     </div>
 
     <script>
-        // エラー発生時の表示
+        // エラーハンドラー
         window.onerror = function(msg, url, line) {
-            document.body.innerHTML = `
-                <div class="error-overlay">
-                    <h2 class="text-3xl font-black italic mb-6 uppercase tracking-tighter">❌ System Halted</h2>
-                    <div class="error-card">
-                        <p class="text-sm font-bold mb-4 italic">健兄、まだどこかにおかしい所があるみたいだ：</p>
-                        <p class="text-[12px] font-mono text-red-200 bg-black/40 p-4 rounded-lg">
-                            ${msg}<br>LINE: ${line}
-                        </p>
-                        <p class="mt-6 text-[10px] text-white/60 leading-relaxed uppercase">
-                            💡 もしこれが「Script error」なら、一度スマホのブラウザ履歴を消して開き直してみて！
-                        </p>
-                    </div>
-                    <button onclick="location.reload()" class="mt-8 px-12 py-4 bg-white text-red-800 rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl">Retry Forge</button>
-                </div>
-            `;
+            document.body.innerHTML = '<div class="error-overlay"><h2 class="text-3xl font-black italic mb-6 uppercase">❌ Boot Error</h2><div class="error-card"><p class="text-sm font-bold mb-4 italic">健兄、まだエラーが出たよ：</p><p class="text-[12px] font-mono text-red-200 bg-black/40 p-4 rounded-lg">' + msg + '<br>LINE: ' + line + '</p><p class="mt-6 text-[10px] text-white/60 leading-relaxed uppercase">💡 これが出たら、スマホのブラウザ履歴を一度消して、開き直してみて！</p></div><button onclick="location.reload()" class="mt-8 px-12 py-4 bg-white text-red-800 rounded-2xl font-black uppercase text-sm shadow-2xl">Retry Forge</button></div>';
             return false;
         };
     </script>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK (Module版) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
-        // ==========================================================
-        // ⚠️ ここを自分の設定に書き換えてください！
-        // ==========================================================
-        const firebaseConfig = {
+        // --- ⚠️ 健兄、ここを自分のFirebase設定に書き換えてください ---
+        var firebaseConfig = {
             apiKey: "AIzaSyD8VBTTCCVIWmYrTy4RuDDraF86ekx6Yw8",
             authDomain: "lean-forge-20de1.firebaseapp.com",
             projectId: "lean-forge-20de1",
@@ -72,41 +56,35 @@
             messagingSenderId: "109377469954",
             appId: "1:109377469954:web:7023e6918e58e31b3fb11b"
         };
-        // ==========================================================
+        // --------------------------------------------------------
 
         if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-            window.onerror("APIキーが初期状態です。書き換えて保存してね！", "", 0);
+            window.onerror("APIキーが初期状態です。コードを書き換えてね！", "", 0);
         } else {
             try {
-                const app = initializeApp(firebaseConfig);
-                const db = getFirestore(app);
-                const auth = getAuth(app);
-                window.firebaseData = { db: db, auth: auth, collection: collection, addDoc: addDoc, onSnapshot: onSnapshot, query: query, Timestamp: Timestamp, signInAnonymously: signInAnonymously, onAuthStateChanged: onAuthStateChanged };
-                console.log("Firebase initialized.");
+                var app = initializeApp(firebaseConfig);
+                var db = getFirestore(app);
+                var auth = getAuth(app);
+                window.firebaseData = {
+                    db: db, auth: auth, collection: collection, addDoc: addDoc, 
+                    onSnapshot: onSnapshot, query: query, Timestamp: Timestamp, 
+                    signInAnonymously: signInAnonymously, onAuthStateChanged: onAuthStateChanged
+                };
+                console.log("Firebase OK");
             } catch (e) {
                 window.onerror("Firebase Init Error: " + e.message, "", 0);
             }
         }
     </script>
 
-    <!-- React App (Babel 6 互換) -->
+    <!-- React App (徹底的に古いJSの書き方 = ES5 で構築) -->
     <script type="text/babel">
-        // 互換性を高めるため、極力シンプルな構文を使用
-        const useState = React.useState;
-        const useEffect = React.useEffect;
-        const useMemo = React.useMemo;
-        
-        const LineChart = Recharts.LineChart;
-        const Line = Recharts.Line;
-        const XAxis = Recharts.XAxis;
-        const YAxis = Recharts.YAxis;
-        const CartesianGrid = Recharts.CartesianGrid;
-        const Tooltip = Recharts.Tooltip;
-        const ResponsiveContainer = Recharts.ResponsiveContainer;
-        const AreaChart = Recharts.AreaChart;
-        const Area = Recharts.Area;
+        // 徹底的に「=>」や「const」を排除し、安全な関数と変数の宣言を使用
+        var useState = React.useState;
+        var useEffect = React.useEffect;
+        var useMemo = React.useMemo;
 
-        const MACHINE_LIST = [
+        var MACHINE_LIST = [
             "ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール",
             "チェストプレス", "ローワーバック", "アブダクター", "アダクター",
             "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー",
@@ -115,25 +93,26 @@
         ];
 
         function App() {
-            const [user, setUser] = useState(null);
-            const [logs, setLogs] = useState([]);
-            const [selectedMachine, setSelectedMachine] = useState(MACHINE_LIST[0]);
-            const [weight, setWeight] = useState(20);
-            const [reps, setReps] = useState(10);
-            const [sets, setSets] = useState(3);
-            const [view, setView] = useState('input');
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState(null);
+            var [user, setUser] = useState(null);
+            var [logs, setLogs] = useState([]);
+            var [selectedMachine, setSelectedMachine] = useState(MACHINE_LIST[0]);
+            var [weight, setWeight] = useState(20);
+            var [reps, setReps] = useState(10);
+            var [sets, setSets] = useState(3);
+            var [view, setView] = useState('input');
+            var [loading, setLoading] = useState(true);
+            var [error, setError] = useState(null);
 
-            // 認証チェック
+            // 依存ライブラリとFirebaseの準備を待つ
             useEffect(function() {
-                let timer = 0;
-                const checkInterval = setInterval(function() {
+                var timer = 0;
+                var checkInterval = setInterval(function() {
                     timer += 500;
-                    if (window.firebaseData) {
-                        const firebase = window.firebaseData;
-                        firebase.signInAnonymously(firebase.auth).catch(function(err) {
-                            setError("匿名認証をONにしてください");
+                    // Recharts, Lucide, Firebaseすべてが揃うまで待つ
+                    if (window.firebaseData && window.Recharts && window.lucide) {
+                        var firebase = window.firebaseData;
+                        firebase.signInAnonymously(firebase.auth)["catch"](function(err) {
+                            setError("匿名認証エラー: コンソールで設定を確認してください");
                         });
                         firebase.onAuthStateChanged(firebase.auth, function(u) {
                             if (u) {
@@ -143,87 +122,84 @@
                             }
                         });
                     }
-                    if (timer > 15000) {
-                        setError("通信タイムアウト。設定を確認してください。");
+                    if (timer > 20000) {
+                        setError("タイムアウト。ライブラリの読み込みに失敗しました。");
                         clearInterval(checkInterval);
                     }
                 }, 500);
                 return function() { clearInterval(checkInterval); };
             }, []);
 
-            // データ取得 (?. を一切使わない書き方)
+            // データ取得 (最新の書き方を一切排除)
             useEffect(function() {
                 if (!user || !window.firebaseData) return;
-                const firebase = window.firebaseData;
-                const q = firebase.collection(firebase.db, 'training_logs_' + user.uid);
+                var firebase = window.firebaseData;
+                var q = firebase.collection(firebase.db, 'training_logs_' + user.uid);
                 
                 return firebase.onSnapshot(q, function(snapshot) {
-                    const data = snapshot.docs.map(function(doc) {
-                        const item = doc.data();
-                        let dateValue = new Date();
+                    var data = snapshot.docs.map(function(doc) {
+                        var item = doc.data();
+                        var dateValue = new Date();
                         if (item.date && item.date.toDate) {
                             dateValue = item.date.toDate();
                         }
-                        return Object.assign({}, item, {
-                            id: doc.id,
-                            date: dateValue
-                        });
+                        var result = Object.assign({}, item);
+                        result.id = doc.id;
+                        result.date = dateValue;
+                        return result;
                     });
                     setLogs(data.sort(function(a, b) { return b.date - a.date; }));
                 }, function(err) {
-                    setError("DBエラー: " + err.message);
+                    setError("データベースエラー: " + err.message);
                 });
             }, [user]);
 
-            const handleSave = async function() {
+            function handleSave() {
                 if (!user || !window.firebaseData) return;
-                const firebase = window.firebaseData;
-                try {
-                    await firebase.addDoc(firebase.collection(firebase.db, 'training_logs_' + user.uid), {
-                        machineName: selectedMachine,
-                        weight: Number(weight),
-                        reps: Number(reps),
-                        sets: Number(sets),
-                        date: firebase.Timestamp.now()
-                    });
+                var firebase = window.firebaseData;
+                firebase.addDoc(firebase.collection(firebase.db, 'training_logs_' + user.uid), {
+                    machineName: selectedMachine,
+                    weight: Number(weight),
+                    reps: Number(reps),
+                    sets: Number(sets),
+                    date: firebase.Timestamp.now()
+                }).then(function() {
                     setView('history');
-                } catch (e) {
-                    alert("保存できませんでした: " + e.message);
-                }
-            };
+                })["catch"](function(e) {
+                    alert("保存エラー: " + e.message);
+                });
+            }
 
-            const trendData = useMemo(function() {
-                return logs.filter(function(l) { return l.machineName === selectedMachine; })
-                    .sort(function(a, b) { return a.date - b.date; })
-                    .map(function(l) { 
-                        return {
-                            date: l.date.toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), 
-                            weight: l.weight
-                        };
-                    });
+            var trendData = useMemo(function() {
+                var filtered = logs.filter(function(l) { return l.machineName === selectedMachine; });
+                var sorted = filtered.sort(function(a, b) { return a.date - b.date; });
+                return sorted.map(function(l) { 
+                    return {
+                        date: l.date.toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), 
+                        weight: l.weight
+                    };
+                });
             }, [logs, selectedMachine]);
 
-            if (error) return <div className="h-screen flex items-center justify-center p-10 text-red-500 font-black uppercase text-center text-xs leading-relaxed bg-slate-950 italic">{error}</div>;
+            if (error) return <div className="h-screen flex items-center justify-center p-10 text-red-500 font-black uppercase text-center text-[10px] bg-slate-950 italic">{error}</div>;
             if (loading) return null;
 
             return (
                 <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 font-sans animate-in">
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-900/30">
-                                <lucide.Activity size={24} className="text-white" />
-                            </div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg"><lucide.Activity size={24} /></div>
                             <div>
                                 <h1 className="text-2xl font-black tracking-tighter italic uppercase">Lean Forge</h1>
-                                <p className="text-[10px] text-slate-500 font-bold tracking-[0.3em] uppercase tracking-tighter">The Aesthetic Log</p>
+                                <p className="text-[10px] text-slate-500 font-bold tracking-[0.3em] uppercase">The Aesthetic Log</p>
                             </div>
                         </div>
                     </header>
 
-                    <nav className="max-w-md mx-auto mb-8 flex bg-slate-900/80 backdrop-blur-md rounded-2xl p-1.5 border border-slate-800 shadow-2xl">
+                    <nav className="max-w-md mx-auto mb-8 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800">
                         {['input', 'history', 'trends'].map(function(t) {
                             return (
-                                <button key={t} onClick={function() { setView(t); }} className={"flex-1 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 " + (view === t ? 'bg-blue-600 text-white shadow-xl shadow-blue-900/40' : 'text-slate-500')}>
+                                <button key={t} onClick={function() { setView(t); }} className={"flex-1 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all " + (view === t ? 'bg-blue-600 text-white shadow-xl' : 'text-slate-500')}>
                                     {t === 'input' ? 'Log' : t === 'history' ? 'History' : 'Trends'}
                                 </button>
                             );
@@ -234,32 +210,32 @@
                         {view === 'input' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl space-y-7 animate-in">
                                 <div>
-                                    <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block tracking-widest ml-1">Select Machine</label>
-                                    <select value={selectedMachine} onChange={function(e) { setSelectedMachine(e.target.value); }} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold text-slate-200 outline-none focus:border-blue-500 transition-colors appearance-none">
+                                    <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block tracking-widest">Select Machine</label>
+                                    <select value={selectedMachine} onChange={function(e) { setSelectedMachine(e.target.value); }} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold text-slate-200 outline-none appearance-none">
                                         {MACHINE_LIST.map(function(m) { return <option key={m} value={m}>{m}</option>; })}
                                     </select>
                                 </div>
                                 <div className="grid grid-cols-3 gap-4">
                                     <div className="text-center">
                                         <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block">Kg</label>
-                                        <input type="number" step="0.5" value={weight} onChange={function(e) { setWeight(e.target.value); }} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none focus:border-blue-500" />
+                                        <input type="number" step="0.5" value={weight} onChange={function(e) { setWeight(e.target.value); }} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none" />
                                     </div>
                                     <div className="text-center">
                                         <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block">Reps</label>
-                                        <input type="number" value={reps} onChange={function(e) { setReps(e.target.value); }} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none focus:border-blue-500" />
+                                        <input type="number" value={reps} onChange={function(e) { setReps(e.target.value); }} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none" />
                                     </div>
                                     <div className="text-center">
                                         <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block">Sets</label>
-                                        <input type="number" value={sets} onChange={function(e) { setSets(e.target.value); }} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none focus:border-blue-500" />
+                                        <input type="number" value={sets} onChange={function(e) { setSets(e.target.value); }} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none" />
                                     </div>
                                 </div>
-                                <button onClick={handleSave} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest text-[13px] shadow-xl shadow-blue-900/50 active:scale-95 transition-all">Forge Progress</button>
+                                <button onClick={handleSave} className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest text-[13px] shadow-xl shadow-blue-900/40 active:scale-95 transition-all">Forge Progress</button>
                             </div>
                         )}
 
                         {view === 'history' && (
                             <div className="space-y-4 animate-in">
-                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] tracking-[0.3em] uppercase">No Records Forge Yet</div> : logs.map(function(log) {
+                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] tracking-widest uppercase">No Records</div> : logs.map(function(log) {
                                     return (
                                         <div key={log.id} className="bg-slate-900 p-5.5 rounded-3xl flex justify-between items-center border border-slate-800 shadow-xl shadow-black/20">
                                             <div>
@@ -267,10 +243,7 @@
                                                 <div className="text-[9px] text-slate-500 font-black uppercase mt-1.5 flex items-center gap-1.5"><lucide.Calendar size={11} /> {log.date.toLocaleDateString()}</div>
                                             </div>
                                             <div className="text-right">
-                                                <div className="flex items-baseline justify-end">
-                                                    <span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span>
-                                                    <span className="text-[10px] text-slate-500 font-black ml-1 uppercase">kg</span>
-                                                </div>
+                                                <div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 font-black ml-1 uppercase">kg</span></div>
                                                 <div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div>
                                             </div>
                                         </div>
@@ -285,40 +258,38 @@
                                     <h2 className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1">Growth Curve</h2>
                                     <lucide.Trophy size={16} className="text-yellow-500 opacity-80" />
                                 </div>
-                                <select value={selectedMachine} onChange={function(e) { setSelectedMachine(e.target.value); }} className="w-full p-4.5 bg-slate-800 rounded-2xl mb-10 border border-slate-700 font-black text-slate-200 outline-none">
+                                <select value={selectedMachine} onChange={function(e) { setSelectedMachine(e.target.value); }} className="w-full p-3 bg-slate-800 rounded-xl border border-slate-700 font-black text-slate-200 outline-none mb-6">
                                     {MACHINE_LIST.map(function(m) { return <option key={m} value={m}>{m}</option>; })}
                                 </select>
                                 <div className="h-64 -ml-4">
                                     {trendData.length > 1 ? (
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={trendData}>
-                                                <defs>
-                                                    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                                                    </linearGradient>
-                                                </defs>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
-                                                <XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} />
-                                                <YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
-                                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px', fontSize: '11px', fontWeight: 'bold'}} />
-                                                <Area type="monotone" dataKey="weight" stroke="#3b82f6" fill="url(#g)" strokeWidth={4} dot={{r: 4, fill: '#3b82f6', strokeWidth: 0}} />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
-                                    ) : <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-20"><lucide.TrendingUp size={32} /><p className="text-[10px] uppercase font-black tracking-widest text-center leading-loose">Analyzing progress...<br/>Log 2+ times to see the curve.</p></div>}
+                                        <Recharts.ResponsiveContainer width="100%" height="100%">
+                                            <Recharts.AreaChart data={trendData}>
+                                                <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                                                <Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                                                <Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} />
+                                                <Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
+                                                <Recharts.Tooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px'}} />
+                                                <Recharts.Area type="monotone" dataKey="weight" stroke="#3b82f6" fill="url(#g)" strokeWidth={4} dot={{r: 4, fill: '#3b82f6'}} />
+                                            </Recharts.AreaChart>
+                                        </Recharts.ResponsiveContainer>
+                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20"><lucide.TrendingUp size={32} /><p className="text-[9px] uppercase font-black tracking-widest mt-4">Need 2+ Logs</p></div>}
                                 </div>
                             </div>
                         )}
                     </main>
-                    <footer className="text-center py-10 opacity-20">
-                        <p className="text-[8px] font-black tracking-[0.5em] uppercase italic">Stable Build v2.1 Online</p>
-                    </footer>
                 </div>
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // 読み込み完了を待ってからレンダリング
+        var renderTimer = setInterval(function() {
+            if (window.ReactDOM && window.React && window.Recharts && window.lucide) {
+                clearInterval(renderTimer);
+                var root = ReactDOM.createRoot(document.getElementById('root'));
+                root.render(React.createElement(App));
+            }
+        }, 100);
     </script>
 </body>
 </html>
