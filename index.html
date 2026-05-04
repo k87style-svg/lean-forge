@@ -17,20 +17,48 @@
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
         .animate-in { animation: fadeIn 0.5s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        /* 診断メッセージ用のスタイル */
-        #diagnostic-msg { color: #f87171; font-size: 12px; margin-top: 20px; line-height: 1.6; text-align: left; max-width: 300px; }
+        #diagnostic-msg { font-size: 12px; margin-top: 20px; line-height: 1.6; text-align: center; max-width: 320px; }
+        .error-text { color: #f87171; font-weight: 800; }
+        .info-text { color: #60a5fa; font-weight: bold; }
     </style>
 </head>
 <body class="bg-slate-950">
     <div id="root">
-        <!-- JavaScriptが起動するまでの待機画面 -->
-        <div class="flex flex-col items-center justify-center h-screen text-slate-500 p-10 text-center">
-            <div id="loading-spinner" class="animate-spin rounded-full h-10 w-10 border-t-2 border-blue-500 mb-6"></div>
-            <p id="loading-text" class="text-sm font-bold mb-2">System Initializing...</p>
-            <div id="diagnostic-msg"></div>
-            <p class="text-[10px] opacity-30 mt-10">LEAN FORGE v1.1</p>
+        <!-- 待機・診断画面 -->
+        <div class="flex flex-col items-center justify-center h-screen text-slate-500 p-10 text-center animate-in">
+            <div id="loading-spinner" class="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500 mb-6"></div>
+            <p id="loading-text" class="text-sm font-black mb-2 uppercase tracking-[0.2em] text-slate-400">System Initializing</p>
+            
+            <div id="diagnostic-msg">
+                <p class="text-blue-500/50 animate-pulse text-[10px]">VERIFYING CONFIGURATION...</p>
+            </div>
+
+            <div id="timeout-help" class="hidden mt-10 p-4 border border-slate-800 rounded-2xl bg-slate-900/50">
+                <p class="text-[10px] text-slate-500 leading-relaxed">
+                    10秒以上進まない場合、ブラウザの広告ブロックが通信を止めているか、APIキーのコピペミス（引用符 " " の消し忘れなど）の可能性があります。
+                </p>
+            </div>
+            
+            <p class="text-[9px] opacity-20 mt-12 font-mono tracking-widest uppercase">LEAN FORGE Engine v1.3</p>
         </div>
     </div>
+
+    <!-- 診断用スクリプト -->
+    <script>
+        // 10秒経ってもrootが空ならヘルプを表示
+        setTimeout(() => {
+            const help = document.getElementById('timeout-help');
+            if (help && document.getElementById('root').innerHTML.includes('loading-spinner')) {
+                help.classList.remove('hidden');
+                help.classList.add('animate-in');
+            }
+        }, 10000);
+
+        window.onerror = function(msg, url, line) {
+            const diag = document.getElementById('diagnostic-msg');
+            if (diag) diag.innerHTML = `<span class="error-text text-xs">❌ JAVASCRIPT ERROR:</span><br><span class="text-[10px] opacity-70">${msg} (Line: ${line})</span>`;
+        };
+    </script>
 
     <!-- Firebase SDK -->
     <script type="module">
@@ -38,7 +66,7 @@
         import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
-        // --- ⚠️ 健兄、ここを自分のFirebase設定に書き換えてください！ ---
+        // --- ⚠️ 健兄、ここを自分のFirebase設定に「正確に」書き換えてください！ ---
         const firebaseConfig = {
             apiKey: "AIzaSyD8VBTTCCVIWmYrTy4RuDDraF86ekx6Yw8",
             authDomain: "lean-forge-20de1.firebaseapp.com",
@@ -52,17 +80,18 @@
 
         try {
             if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-                diag.innerHTML = `<strong>⚠️ 設定エラー:</strong><br>コード内の 'YOUR_API_KEY' などの部分が書き換えられていないようです。Firebaseコンソールの設定情報を貼り付けてください。`;
+                diag.innerHTML = `<span class="error-text">⚠️ CONFIG MISSING:</span><br><span class="text-[10px] text-slate-500 uppercase">Please replace placeholder keys in the code.</span>`;
                 window.firebaseError = "Config missing";
             } else {
+                diag.innerHTML = `<span class="info-text">CONNECTING TO FIREBASE...</span>`;
                 const app = initializeApp(firebaseConfig);
                 const db = getFirestore(app);
                 const auth = getAuth(app);
                 window.firebaseData = { db, auth, collection, addDoc, onSnapshot, query, Timestamp, signInAnonymously, onAuthStateChanged };
-                console.log("Firebase initialized successfully");
+                diag.innerHTML = `<span class="info-text">FIREBASE READY.</span><br><span class="text-[10px] text-blue-500/50 animate-pulse uppercase">Launching UI Engine...</span>`;
             }
         } catch (e) {
-            diag.innerHTML = `<strong>❌ 初期化失敗:</strong><br>${e.message}`;
+            diag.innerHTML = `<span class="error-text">❌ FIREBASE INIT FAILED:</span><br><span class="text-[10px] opacity-70 uppercase">${e.message}</span>`;
             window.firebaseError = e.message;
         }
     </script>
@@ -70,7 +99,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
         const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } = Recharts;
-        const { PlusCircle, History, TrendingUp, Dumbbell, Activity, Calendar, ChevronRight, Trophy, Target, AlertCircle, RefreshCw } = lucide;
+        const { Activity, Calendar, Dumbbell, Trophy, TrendingUp, AlertCircle, RefreshCw } = lucide;
 
         const MACHINE_LIST = [
             "ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール",
@@ -89,7 +118,7 @@
             const [sets, setSets] = useState(3);
             const [view, setView] = useState('input');
             const [loading, setLoading] = useState(true);
-            const [status, setStatus] = useState("Checking Firebase...");
+            const [status, setStatus] = useState("Authenticating...");
             const [error, setError] = useState(null);
 
             useEffect(() => {
@@ -98,32 +127,31 @@
                     timer += 500;
                     
                     if (window.firebaseError) {
-                        setError(window.firebaseError === "Config missing" ? "Firebaseの設定が初期状態のままです。" : window.firebaseError);
+                        setError(window.firebaseError === "Config missing" ? "Firebaseの設定情報が未入力です。" : window.firebaseError);
                         setLoading(false);
                         clearInterval(checkInterval);
                         return;
                     }
 
                     if (window.firebaseData) {
-                        setStatus("Logging in...");
                         const { auth, signInAnonymously, onAuthStateChanged } = window.firebaseData;
                         
                         signInAnonymously(auth).catch(err => {
-                            setError("匿名認証に失敗しました。FirebaseコンソールのAuthenticationで『匿名』を有効にしてください。");
+                            setError("匿名認証エラー: Authenticationで『匿名』を有効にしてください。");
                             setLoading(false);
                         });
 
                         onAuthStateChanged(auth, (u) => {
                             if (u) {
                                 setUser(u);
-                                setStatus("Ready");
+                                setStatus("Syncing...");
                                 setLoading(false);
                                 clearInterval(checkInterval);
                             }
                         });
                     }
 
-                    if (timer > 15000) {
+                    if (timer > 20000) {
                         setError("接続タイムアウト。ネットワーク環境か設定を確認してください。");
                         setLoading(false);
                         clearInterval(checkInterval);
@@ -146,11 +174,11 @@
                         }));
                         setLogs(data.sort((a, b) => b.date - a.date));
                     }, (err) => {
-                        setError("Firestoreエラー: " + err.message + "。テストモードになっているか確認してください。");
+                        setError("Firestore接続エラー: " + err.message + " (テストモードを確認)");
                     });
                     return () => unsubscribe();
                 } catch (e) {
-                    setError("データ取得失敗: " + e.message);
+                    setError("データ通信失敗: " + e.message);
                 }
             }, [user]);
 
@@ -167,7 +195,7 @@
                     });
                     setView('history');
                 } catch (e) { 
-                    alert("保存エラー: " + e.message);
+                    alert("保存失敗: " + e.message);
                 }
             };
 
@@ -183,13 +211,13 @@
 
             if (error) {
                 return (
-                    <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-slate-100 p-8 text-center animate-in">
+                    <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-slate-100 p-8 text-center animate-in font-sans">
                         <AlertCircle size={60} className="text-red-500 mb-6" />
-                        <h1 className="text-xl font-black mb-4">SETUP ERROR</h1>
-                        <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl mb-8">
-                            <p className="text-xs text-red-400 text-left whitespace-pre-wrap">{error}</p>
+                        <h1 className="text-xl font-black mb-4 tracking-tight uppercase italic">Engine Failure</h1>
+                        <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-2xl mb-8 w-full max-w-xs">
+                            <p className="text-[10px] text-red-400 text-left leading-relaxed font-mono whitespace-pre-wrap uppercase">{error}</p>
                         </div>
-                        <button onClick={() => location.reload()} className="px-8 py-4 bg-blue-600 rounded-2xl font-black text-sm uppercase tracking-widest active:scale-95 transition-all">Retry</button>
+                        <button onClick={() => location.reload()} className="w-full max-w-xs py-4 bg-blue-600 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-blue-900/40">Re-Forge</button>
                     </div>
                 );
             }
@@ -197,29 +225,29 @@
             if (loading) {
                 return (
                     <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-blue-500 font-bold">
-                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500 mb-4"></div>
-                        <p className="text-xs tracking-widest uppercase">{status}</p>
+                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500 mb-4 shadow-lg shadow-blue-500/20"></div>
+                        <p className="text-[10px] tracking-[0.4em] uppercase opacity-50">{status}</p>
                     </div>
                 );
             }
 
             return (
-                <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 font-sans">
+                <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 font-sans selection:bg-blue-500/30">
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-xl shadow-lg">
+                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-xl shadow-lg shadow-blue-900/30">
                                 <Activity size={24} className="text-white" />
                             </div>
                             <div>
                                 <h1 className="text-2xl font-black tracking-tighter italic">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold tracking-[0.2em] uppercase">The Aesthetic Log</p>
+                                <p className="text-[10px] text-slate-500 font-bold tracking-[0.3em] uppercase">The Aesthetic Log</p>
                             </div>
                         </div>
                     </header>
 
-                    <nav className="max-w-md mx-auto mb-8 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-2xl">
+                    <nav className="max-w-md mx-auto mb-8 flex bg-slate-900/50 backdrop-blur-md rounded-2xl p-1.5 border border-slate-800 shadow-2xl">
                         {['input', 'history', 'trends'].map(t => (
-                            <button key={t} onClick={() => setView(t)} className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${view === t ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}>
+                            <button key={t} onClick={() => setView(t)} className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-500 ${view === t ? 'bg-blue-600 text-white shadow-xl shadow-blue-900/40' : 'text-slate-500 hover:text-slate-300'}`}>
                                 {t === 'input' ? 'Log' : t === 'history' ? 'History' : 'Trends'}
                             </button>
                         ))}
@@ -228,28 +256,28 @@
                     <main className="max-w-md mx-auto space-y-6">
                         {view === 'input' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
-                                <div className="space-y-6">
-                                    <div className="relative">
-                                        <label className="text-[10px] text-slate-500 uppercase font-black ml-1 mb-2 block tracking-widest">Select Machine</label>
-                                        <select value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl outline-none border border-slate-700 font-bold text-slate-200">
+                                <div className="space-y-7">
+                                    <div>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black ml-1 mb-3 block tracking-[0.2em]">Target Machine</label>
+                                        <select value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl outline-none border border-slate-700 font-bold text-slate-200 focus:border-blue-500 transition-all appearance-none cursor-pointer">
                                             {MACHINE_LIST.map(m => <option key={m}>{m}</option>)}
                                         </select>
                                     </div>
                                     <div className="grid grid-cols-3 gap-4">
                                         <div className="text-center">
-                                            <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Kg</label>
-                                            <input type="number" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none" />
+                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block tracking-[0.2em]">Weight/Kg</label>
+                                            <input type="number" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none transition-all" />
                                         </div>
                                         <div className="text-center">
-                                            <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Reps</label>
-                                            <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none" />
+                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block tracking-[0.2em]">Reps</label>
+                                            <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none transition-all" />
                                         </div>
                                         <div className="text-center">
-                                            <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Sets</label>
-                                            <input type="number" value={sets} onChange={e => setSets(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none" />
+                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block tracking-[0.2em]">Sets</label>
+                                            <input type="number" value={sets} onChange={e => setSets(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none transition-all" />
                                         </div>
                                     </div>
-                                    <button onClick={handleSave} className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-blue-900/40 active:scale-98 transition-all uppercase tracking-widest text-sm">Update Progress</button>
+                                    <button onClick={handleSave} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-blue-900/50 active:scale-95 transition-all uppercase tracking-widest text-[13px]">Forge Progress</button>
                                 </div>
                             </div>
                         )}
@@ -259,17 +287,17 @@
                                 {logs.length === 0 ? (
                                     <div className="text-center py-24 opacity-20 flex flex-col items-center">
                                         <Dumbbell size={48} className="mb-4" />
-                                        <p className="text-xs uppercase font-bold tracking-widest text-slate-600">No logs captured</p>
+                                        <p className="text-[10px] uppercase font-black tracking-widest text-slate-600">Forge Your First Record</p>
                                     </div>
                                 ) : logs.map(log => (
-                                    <div key={log.id} className="bg-slate-900 p-5 rounded-2xl flex justify-between items-center border border-slate-800">
+                                    <div key={log.id} className="bg-slate-900 p-5.5 rounded-3xl flex justify-between items-center border border-slate-800 hover:border-slate-600 transition-all shadow-xl shadow-black/20">
                                         <div>
-                                            <div className="font-black text-slate-200">{log.machineName}</div>
-                                            <div className="text-[10px] text-slate-500 font-bold uppercase mt-1 flex items-center gap-1"><Calendar size={10} /> {log.date.toLocaleDateString()}</div>
+                                            <div className="font-black text-slate-200 text-[15px]">{log.machineName}</div>
+                                            <div className="text-[9px] text-slate-500 font-black uppercase mt-1.5 flex items-center gap-1.5"><Calendar size={11} /> {log.date.toLocaleDateString()}</div>
                                         </div>
                                         <div className="text-right">
-                                            <div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500">{log.weight}</span><span className="text-[10px] text-slate-500 font-black ml-1 uppercase">kg</span></div>
-                                            <div className="text-xs font-bold text-slate-400 italic">{log.reps} reps × {log.sets} sets</div>
+                                            <div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 font-black ml-1 uppercase">kg</span></div>
+                                            <div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div>
                                         </div>
                                     </div>
                                 ))}
@@ -278,7 +306,11 @@
 
                         {view === 'trends' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
-                                <select value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl mb-8 outline-none border border-slate-700 font-bold text-slate-200">
+                                <div className="flex justify-between items-center mb-7">
+                                    <h2 className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Growth Curve</h2>
+                                    <Trophy size={16} className="text-yellow-500 opacity-80" />
+                                </div>
+                                <select value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl mb-10 outline-none border border-slate-700 font-black text-slate-200">
                                     {MACHINE_LIST.map(m => <option key={m}>{m}</option>)}
                                 </select>
                                 <div className="h-64 -ml-4">
@@ -294,11 +326,16 @@
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
                                                 <XAxis dataKey="date" fontSize={10} tick={{fill: '#64748b'}} axisLine={false} tickLine={false} />
                                                 <YAxis fontSize={10} tick={{fill: '#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
-                                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', fontSize: '10px'}} />
-                                                <Area type="monotone" dataKey="weight" stroke="#3b82f6" fill="url(#colorWeight)" strokeWidth={4} dot={{r: 4, fill: '#3b82f6'}} />
+                                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px', fontSize: '11px', fontWeight: 'bold'}} />
+                                                <Area type="monotone" dataKey="weight" stroke="#3b82f6" fill="url(#colorWeight)" strokeWidth={4} dot={{r: 4, fill: '#3b82f6', strokeWidth: 0}} activeDot={{r: 6}} />
                                             </AreaChart>
                                         </ResponsiveContainer>
-                                    ) : <p className="text-center text-slate-600 py-20 text-xs">Need 2+ logs to show trends</p>}
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center space-y-5 opacity-20">
+                                            <div className="p-5 bg-slate-800 rounded-full"><TrendingUp size={32} /></div>
+                                            <p className="text-[10px] uppercase font-black tracking-widest text-center leading-loose">Analyzing progress...<br/>Log 2+ times to see the curve.</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
