@@ -17,15 +17,18 @@
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
         .animate-in { animation: fadeIn 0.5s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* 診断メッセージ用のスタイル */
+        #diagnostic-msg { color: #f87171; font-size: 12px; margin-top: 20px; line-height: 1.6; text-align: left; max-width: 300px; }
     </style>
 </head>
 <body class="bg-slate-950">
     <div id="root">
-        <!-- 初期表示：これが見えている間はJavaScriptが動いていない -->
+        <!-- JavaScriptが起動するまでの待機画面 -->
         <div class="flex flex-col items-center justify-center h-screen text-slate-500 p-10 text-center">
-            <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-blue-500 mb-6"></div>
-            <p class="text-sm font-bold mb-2">Initializing System...</p>
-            <p class="text-[10px] opacity-50">もしこの画面が10秒以上続く場合は、<br>JavaScriptが無効か読み込みに失敗しています。</p>
+            <div id="loading-spinner" class="animate-spin rounded-full h-10 w-10 border-t-2 border-blue-500 mb-6"></div>
+            <p id="loading-text" class="text-sm font-bold mb-2">System Initializing...</p>
+            <div id="diagnostic-msg"></div>
+            <p class="text-[10px] opacity-30 mt-10">LEAN FORGE v1.1</p>
         </div>
     </div>
 
@@ -35,7 +38,7 @@
         import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
-        // --- ⚠️ 重要：ここに自分のFirebase設定を正確に貼り付けてください ---
+        // --- ⚠️ 健兄、ここを自分のFirebase設定に書き換えてください！ ---
         const firebaseConfig = {
             apiKey: "AIzaSyD8VBTTCCVIWmYrTy4RuDDraF86ekx6Yw8",
             authDomain: "lean-forge-20de1.firebaseapp.com",
@@ -45,22 +48,22 @@
             appId: "1:109377469954:web:7023e6918e58e31b3fb11b"
         };
 
-        window.firebaseStatus = "Config Loaded";
+        const diag = document.getElementById('diagnostic-msg');
 
         try {
-            if (window.location.protocol === 'file:') {
-                window.firebaseError = "【重要】ファイルを直接開いています。セキュリティ制限により動作しません。GitHub PagesやVercel等にアップロードして『https://』でアクセスしてください。";
-            } else if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-                window.firebaseError = "Firebaseの設定が初期状態（YOUR_API_KEY）のままです。ご自身のFirebase設定を貼り付けてください。";
+            if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+                diag.innerHTML = `<strong>⚠️ 設定エラー:</strong><br>コード内の 'YOUR_API_KEY' などの部分が書き換えられていないようです。Firebaseコンソールの設定情報を貼り付けてください。`;
+                window.firebaseError = "Config missing";
             } else {
                 const app = initializeApp(firebaseConfig);
                 const db = getFirestore(app);
                 const auth = getAuth(app);
                 window.firebaseData = { db, auth, collection, addDoc, onSnapshot, query, Timestamp, signInAnonymously, onAuthStateChanged };
-                window.firebaseStatus = "Firebase Initialized";
+                console.log("Firebase initialized successfully");
             }
         } catch (e) {
-            window.firebaseError = "初期化失敗: " + e.message;
+            diag.innerHTML = `<strong>❌ 初期化失敗:</strong><br>${e.message}`;
+            window.firebaseError = e.message;
         }
     </script>
 
@@ -95,18 +98,18 @@
                     timer += 500;
                     
                     if (window.firebaseError) {
-                        setError(window.firebaseError);
+                        setError(window.firebaseError === "Config missing" ? "Firebaseの設定が初期状態のままです。" : window.firebaseError);
                         setLoading(false);
                         clearInterval(checkInterval);
                         return;
                     }
 
                     if (window.firebaseData) {
-                        setStatus("Connecting to Database...");
+                        setStatus("Logging in...");
                         const { auth, signInAnonymously, onAuthStateChanged } = window.firebaseData;
                         
                         signInAnonymously(auth).catch(err => {
-                            setError("匿名認証に失敗しました。Firebase ConsoleのAuthenticationで『匿名』を有効にしてください。エラー詳細: " + err.message);
+                            setError("匿名認証に失敗しました。FirebaseコンソールのAuthenticationで『匿名』を有効にしてください。");
                             setLoading(false);
                         });
 
@@ -120,8 +123,8 @@
                         });
                     }
 
-                    if (timer > 15000) { // 15秒でタイムアウト
-                        setError("接続タイムアウト。Firebaseのスクリプトが正常に読み込まれていないか、ネットワーク制限があります。");
+                    if (timer > 15000) {
+                        setError("接続タイムアウト。ネットワーク環境か設定を確認してください。");
                         setLoading(false);
                         clearInterval(checkInterval);
                     }
@@ -143,7 +146,7 @@
                         }));
                         setLogs(data.sort((a, b) => b.date - a.date));
                     }, (err) => {
-                        setError("Firestore読み取りエラー: " + err.message + "。ルール設定が『テストモード』になっているか確認してください。");
+                        setError("Firestoreエラー: " + err.message + "。テストモードになっているか確認してください。");
                     });
                     return () => unsubscribe();
                 } catch (e) {
@@ -164,7 +167,7 @@
                     });
                     setView('history');
                 } catch (e) { 
-                    alert("保存に失敗しました: " + e.message);
+                    alert("保存エラー: " + e.message);
                 }
             };
 
@@ -182,31 +185,20 @@
                 return (
                     <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-slate-100 p-8 text-center animate-in">
                         <AlertCircle size={60} className="text-red-500 mb-6" />
-                        <h1 className="text-2xl font-black mb-4 tracking-tighter">CONNECTION ERROR</h1>
+                        <h1 className="text-xl font-black mb-4">SETUP ERROR</h1>
                         <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl mb-8">
-                            <p className="text-xs text-red-400 leading-relaxed text-left break-all">{error}</p>
+                            <p className="text-xs text-red-400 text-left whitespace-pre-wrap">{error}</p>
                         </div>
-                        <button 
-                            onClick={() => location.reload()} 
-                            className="flex items-center gap-2 px-8 py-4 bg-slate-800 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-slate-700 transition-all"
-                        >
-                            <RefreshCw size={18} /> Retry
-                        </button>
+                        <button onClick={() => location.reload()} className="px-8 py-4 bg-blue-600 rounded-2xl font-black text-sm uppercase tracking-widest active:scale-95 transition-all">Retry</button>
                     </div>
                 );
             }
 
             if (loading) {
                 return (
-                    <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-blue-500 font-bold animate-in">
-                        <div className="relative mb-8">
-                            <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-blue-500 border-opacity-30"></div>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="h-2 w-2 bg-blue-500 rounded-full animate-ping"></div>
-                            </div>
-                        </div>
-                        <h2 className="text-lg font-black tracking-widest uppercase italic mb-2">LEAN FORGE</h2>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.3em]">{status}</p>
+                    <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-blue-500 font-bold">
+                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500 mb-4"></div>
+                        <p className="text-xs tracking-widest uppercase">{status}</p>
                     </div>
                 );
             }
@@ -215,7 +207,7 @@
                 <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 font-sans">
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-xl shadow-lg shadow-blue-900/20">
+                            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-xl shadow-lg">
                                 <Activity size={24} className="text-white" />
                             </div>
                             <div>
@@ -227,13 +219,7 @@
 
                     <nav className="max-w-md mx-auto mb-8 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-2xl">
                         {['input', 'history', 'trends'].map(t => (
-                            <button 
-                                key={t} 
-                                onClick={() => setView(t)} 
-                                className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${
-                                    view === t ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
-                                }`}
-                            >
+                            <button key={t} onClick={() => setView(t)} className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${view === t ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}>
                                 {t === 'input' ? 'Log' : t === 'history' ? 'History' : 'Trends'}
                             </button>
                         ))}
@@ -245,36 +231,25 @@
                                 <div className="space-y-6">
                                     <div className="relative">
                                         <label className="text-[10px] text-slate-500 uppercase font-black ml-1 mb-2 block tracking-widest">Select Machine</label>
-                                        <select 
-                                            value={selectedMachine} 
-                                            onChange={e => setSelectedMachine(e.target.value)} 
-                                            className="w-full p-4 bg-slate-800 rounded-2xl outline-none border border-slate-700 font-bold text-slate-200 appearance-none focus:border-blue-500 transition-colors"
-                                        >
+                                        <select value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl outline-none border border-slate-700 font-bold text-slate-200">
                                             {MACHINE_LIST.map(m => <option key={m}>{m}</option>)}
                                         </select>
                                     </div>
-
                                     <div className="grid grid-cols-3 gap-4">
                                         <div className="text-center">
                                             <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Kg</label>
-                                            <input type="number" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 transition-colors" />
+                                            <input type="number" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none" />
                                         </div>
                                         <div className="text-center">
                                             <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Reps</label>
-                                            <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 transition-colors" />
+                                            <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none" />
                                         </div>
                                         <div className="text-center">
                                             <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Sets</label>
-                                            <input type="number" value={sets} onChange={e => setSets(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 transition-colors" />
+                                            <input type="number" value={sets} onChange={e => setSets(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 focus:border-blue-500 outline-none" />
                                         </div>
                                     </div>
-
-                                    <button 
-                                        onClick={handleSave} 
-                                        className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-blue-900/40 active:scale-[0.98] transition-all uppercase tracking-widest text-sm"
-                                    >
-                                        Update Progress
-                                    </button>
+                                    <button onClick={handleSave} className="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-blue-900/40 active:scale-98 transition-all uppercase tracking-widest text-sm">Update Progress</button>
                                 </div>
                             </div>
                         )}
@@ -287,18 +262,13 @@
                                         <p className="text-xs uppercase font-bold tracking-widest text-slate-600">No logs captured</p>
                                     </div>
                                 ) : logs.map(log => (
-                                    <div key={log.id} className="bg-slate-900 p-5 rounded-2xl flex justify-between items-center border border-slate-800 hover:border-slate-700 transition-all">
+                                    <div key={log.id} className="bg-slate-900 p-5 rounded-2xl flex justify-between items-center border border-slate-800">
                                         <div>
                                             <div className="font-black text-slate-200">{log.machineName}</div>
-                                            <div className="text-[10px] text-slate-500 font-bold uppercase mt-1 flex items-center gap-1">
-                                                <Calendar size={10} /> {log.date.toLocaleDateString()}
-                                            </div>
+                                            <div className="text-[10px] text-slate-500 font-bold uppercase mt-1 flex items-center gap-1"><Calendar size={10} /> {log.date.toLocaleDateString()}</div>
                                         </div>
                                         <div className="text-right">
-                                            <div className="flex items-baseline justify-end">
-                                                <span className="text-2xl font-black text-blue-500">{log.weight}</span>
-                                                <span className="text-[10px] text-slate-500 font-black ml-1 uppercase">kg</span>
-                                            </div>
+                                            <div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500">{log.weight}</span><span className="text-[10px] text-slate-500 font-black ml-1 uppercase">kg</span></div>
                                             <div className="text-xs font-bold text-slate-400 italic">{log.reps} reps × {log.sets} sets</div>
                                         </div>
                                     </div>
@@ -308,15 +278,7 @@
 
                         {view === 'trends' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h2 className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Growth Analytics</h2>
-                                    <Trophy size={18} className="text-yellow-500" />
-                                </div>
-                                <select 
-                                    value={selectedMachine} 
-                                    onChange={e => setSelectedMachine(e.target.value)} 
-                                    className="w-full p-4 bg-slate-800 rounded-2xl mb-8 outline-none border border-slate-700 font-bold"
-                                >
+                                <select value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl mb-8 outline-none border border-slate-700 font-bold text-slate-200">
                                     {MACHINE_LIST.map(m => <option key={m}>{m}</option>)}
                                 </select>
                                 <div className="h-64 -ml-4">
@@ -332,19 +294,11 @@
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
                                                 <XAxis dataKey="date" fontSize={10} tick={{fill: '#64748b'}} axisLine={false} tickLine={false} />
                                                 <YAxis fontSize={10} tick={{fill: '#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
-                                                <Tooltip 
-                                                    contentStyle={{backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', fontSize: '10px'}}
-                                                    itemStyle={{color: '#3b82f6', fontWeight: '900'}}
-                                                />
-                                                <Area type="monotone" dataKey="weight" stroke="#3b82f6" fill="url(#colorWeight)" strokeWidth={4} dot={{r: 4, fill: '#3b82f6', strokeWidth: 0}} activeDot={{r: 6}} />
+                                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', fontSize: '10px'}} />
+                                                <Area type="monotone" dataKey="weight" stroke="#3b82f6" fill="url(#colorWeight)" strokeWidth={4} dot={{r: 4, fill: '#3b82f6'}} />
                                             </AreaChart>
                                         </ResponsiveContainer>
-                                    ) : (
-                                        <div className="h-full flex flex-col items-center justify-center text-slate-600 text-xs text-center space-y-4">
-                                            <div className="p-4 bg-slate-800 rounded-full"><TrendingUp size={24} /></div>
-                                            <p>Need at least 2 logs to<br/>generate the growth curve.</p>
-                                        </div>
-                                    )}
+                                    ) : <p className="text-center text-slate-600 py-20 text-xs">Need 2+ logs to show trends</p>}
                                 </div>
                             </div>
                         )}
