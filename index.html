@@ -4,64 +4,60 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>LEAN FORGE | Training Log</title>
+    <!-- 外部スクリプトにcrossoriginを追加して詳細なエラーが見えるように修正 -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js" crossorigin></script>
+    <script src="https://unpkg.com/recharts/umd/Recharts.js" crossorigin></script>
+    <script src="https://unpkg.com/lucide@latest" crossorigin></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #020617; color: #f8fafc; margin: 0; }
-        .error-overlay { position: fixed; inset: 0; background: #b91c1c; color: white; padding: 20px; z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-weight: bold; }
-        .code-snippet { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; font-family: monospace; font-size: 11px; margin-top: 10px; text-align: left; width: 100%; max-width: 400px; overflow-x: auto; border: 1px solid rgba(255,255,255,0.1); }
+        .error-overlay { position: fixed; inset: 0; background: #991b1b; color: white; padding: 30px; z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+        .error-card { background: rgba(0,0,0,0.4); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.2); width: 100%; max-width: 450px; text-align: left; }
+        .code-font { font-family: 'Courier New', Courier, monospace; font-size: 12px; word-break: break-all; color: #fca5a5; }
     </style>
 </head>
 <body>
     <div id="root">
-        <div class="flex flex-col items-center justify-center h-screen p-10 text-center">
-            <div id="spinner" class="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500 mb-6"></div>
-            <h1 class="text-3xl font-black italic tracking-tighter mb-2">LEAN FORGE</h1>
-            <p id="status-text" class="text-sm font-bold text-slate-500 uppercase tracking-widest">System Booting...</p>
-            <div id="boot-logs" class="mt-4 text-[10px] text-slate-600 font-mono"></div>
+        <div class="flex flex-col items-center justify-center h-screen p-10 text-center animate-pulse">
+            <div id="spinner" class="animate-spin rounded-full h-14 w-14 border-t-2 border-blue-500 mb-8"></div>
+            <h1 class="text-4xl font-black italic tracking-tighter mb-4">LEAN FORGE</h1>
+            <p id="status-text" class="text-xs font-bold text-slate-500 uppercase tracking-[0.4em]">Initializing Core Engine...</p>
         </div>
     </div>
 
-    <!-- バージョン表示 -->
-    <div id="ver-tag" style="position: fixed; bottom: 10px; right: 10px; font-size: 10px; font-weight: 900; color: #3b82f6; z-index: 100; opacity: 0.6;">
-        LEAN FORGE v1.8 ONLINE
+    <!-- システムタグ -->
+    <div style="position: fixed; bottom: 10px; left: 10px; font-size: 9px; font-weight: 900; color: #3b82f6; z-index: 100; opacity: 0.5;">
+        DEBUG_MODE: ON | BUILD_v1.9
     </div>
 
     <script>
-        const logs = document.getElementById('boot-logs');
-        function addLog(msg) {
-            const d = document.createElement('div');
-            d.textContent = `> ${msg}`;
-            logs.appendChild(d);
-        }
-
+        // エラーハンドラーを最初に配置
         window.onerror = function(msg, url, line, col, error) {
+            const status = document.getElementById('status-text');
+            if (status) status.textContent = "BOOT HALTED";
+            
             document.body.innerHTML = `
-                <div class="error-overlay animate-in">
-                    <h2 class="text-2xl mb-4 italic font-black">❌ CODE ERROR</h2>
-                    <p class="mb-4 text-sm">健兄、コードのどこかに記号のミスがあるみたいだよ！</p>
-                    <div class="code-snippet">
-                        <div class="text-red-300 font-bold mb-2 underline italic">詳細なエラーメッセージ:</div>
-                        ${msg}<br>
-                        <div class="mt-2 text-white/50 italic">発生場所: ${line}行目付近</div>
+                <div class="error-overlay">
+                    <h2 class="text-3xl font-black italic mb-6">❌ SYSTEM ERROR</h2>
+                    <div class="error-card">
+                        <p class="text-sm font-bold mb-4">健兄、エラーの本当の内容が見つかったよ：</p>
+                        <div class="code-font bg-black/30 p-4 rounded-lg mb-4">
+                            MESSAGE: ${msg}<br>
+                            LOCATION: ${line}行目付近<br>
+                            DETAILS: ${error ? error.stack.split('\\n')[0] : 'No stack trace'}
+                        </div>
+                        <p class="text-[10px] text-white/70 leading-relaxed uppercase">
+                            💡 もしこれが 'Script error' なら、ネットの接続が不安定か広告ブロックが原因の可能性があるよ。具体的なメッセージが出ているなら、それをポラリスに教えて！
+                        </p>
                     </div>
-                    <div class="mt-8 text-xs opacity-90 leading-loose">
-                        <p>✅ 各行の末尾にカンマ <span class="bg-black/20 px-1 rounded">,</span> はありますか？</p>
-                        <p>✅ キーの前後がダブルクォート <span class="bg-black/20 px-1 rounded">" "</span> で囲まれていますか？</p>
-                        <p>✅ 最後に <span class="bg-black/20 px-1 rounded">};</span> で閉じていますか？</p>
-                    </div>
-                    <button onclick="location.reload()" class="mt-8 px-10 py-4 bg-white text-red-700 rounded-2xl font-black uppercase text-sm shadow-2xl active:scale-95 transition-all">Retry Forge</button>
+                    <button onclick="location.reload()" class="mt-8 px-12 py-4 bg-white text-red-800 rounded-2xl font-black shadow-2xl active:scale-95 transition-all uppercase tracking-widest text-sm">Retry Forge</button>
                 </div>
             `;
             return false;
         };
-
-        addLog("Engine ready. Initializing Firebase...");
     </script>
 
     <!-- Firebase SDK -->
@@ -71,7 +67,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
         // ==========================================================
-        // ⚠️ 健兄、ここを自分の設定に書き換えてください！
+        // ⚠️ 健兄、ここを自分の設定に正確に書き換えてください
         // ==========================================================
         const firebaseConfig = {
             apiKey: "AIzaSyD8VBTTCCVIWmYrTy4RuDDraF86ekx6Yw8",
@@ -84,16 +80,16 @@
         // ==========================================================
 
         if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-            window.onerror("APIキーがまだ初期状態です。書き換えてから保存してね！", "", 0);
+            window.onerror("APIキーが初期状態のままです。コードを書き換えてね！", "", 0);
         } else {
             try {
                 const app = initializeApp(firebaseConfig);
                 const db = getFirestore(app);
                 const auth = getAuth(app);
                 window.firebaseData = { db, auth, collection, addDoc, onSnapshot, query, Timestamp, signInAnonymously, onAuthStateChanged };
-                console.log("Firebase Connection: SUCCESS");
+                console.log("Firebase OK");
             } catch (e) {
-                window.onerror("Firebaseの初期化に失敗したよ: " + e.message, "", 0);
+                window.onerror("Firebase初期化失敗: " + e.message, "", 0);
             }
         }
     </script>
@@ -101,7 +97,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
         const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } = Recharts;
-        const { Activity, Calendar, Dumbbell, Trophy, TrendingUp, AlertCircle } = lucide;
+        const { Activity, Calendar, Dumbbell, Trophy, TrendingUp } = lucide;
 
         const MACHINE_LIST = [
             "ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール",
@@ -133,7 +129,7 @@
                             if (u) { setUser(u); setLoading(false); clearInterval(checkInterval); }
                         });
                     }
-                    if (timer > 20000) { setError("サーバーの応答がありません"); clearInterval(checkInterval); }
+                    if (timer > 20000) { setError("サーバーの応答がありません。ネットワーク環境を確認してください。"); clearInterval(checkInterval); }
                 }, 500);
                 return () => clearInterval(checkInterval);
             }, []);
@@ -157,7 +153,7 @@
 
             const trendData = useMemo(() => logs.filter(l => l.machineName === selectedMachine).sort((a,b)=>a.date-b.date).map(l=>({date: l.date.toLocaleDateString('ja-JP',{month:'2-digit',day:'2-digit'}), weight: l.weight})), [logs, selectedMachine]);
 
-            if (error) return <div className="h-screen flex items-center justify-center p-10 text-red-500 font-black uppercase text-center text-sm leading-loose">{error}</div>;
+            if (error) return <div className="h-screen flex items-center justify-center p-10 text-red-500 font-black uppercase text-center text-xs leading-loose bg-slate-950 italic">{error}</div>;
             if (loading) return null;
 
             return (
