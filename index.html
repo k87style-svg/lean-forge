@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Resurrection v5.6</title>
+    <title>LEAN FORGE | Diagnostics v5.7</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -57,28 +57,33 @@
 
             const loadData = async (overrideConfig) => {
                 const c = overrideConfig || config;
-                if (!c.token || !c.owner || !c.repo) return;
+                if (!c.owner || !c.repo) return;
                 
                 setLoading(true);
-                const url = `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${c.path}`;
+                const baseUrl = `https://api.github.com/repos/${c.owner}/${c.repo}`;
+                const fileUrl = `${baseUrl}/contents/${c.path}`;
                 
                 try {
-                    const res = await fetch(url, {
-                        headers: { 
-                            "Authorization": `token ${c.token}`,
-                            "Accept": "application/vnd.github.v3+json",
-                            "Cache-Control": "no-cache" 
-                        }
-                    });
+                    // 診断1: リポジトリ自体が存在するか（トークンなしでチェック）
+                    const repoCheck = await fetch(baseUrl).catch(e => { throw new Error("GitHubへの通信自体がブロックされました(CORS/Network)"); });
+                    if (repoCheck.status === 404) throw new Error(`404: リポジトリ '${c.owner}/${c.repo}' が見つかりません。名前を再確認してください。`);
                     
-                    if (res.status === 401) throw new Error("401 (トークンが無効です。GitHub上で再発行が必要かもしれません)");
+                    // 診断2: トークンを使ってファイルを取得
+                    const headers = { 
+                        "Accept": "application/vnd.github.v3+json",
+                        "Cache-Control": "no-cache" 
+                    };
+                    if (c.token) headers["Authorization"] = `token ${c.token.trim()}`;
+
+                    const res = await fetch(fileUrl, { headers });
+                    
+                    if (res.status === 401) throw new Error("401: トークンが無効です。GitHubで再発行してください。");
                     if (res.status === 404) {
-                        // ファイルがない（初回の記録前）場合は正常
                         setLogs([]);
                         setFileSha(null);
                         return true;
                     }
-                    if (!res.ok) throw new Error(`${res.status} (${res.statusText})`);
+                    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
 
                     const data = await res.json();
                     if (data.content) {
@@ -89,7 +94,7 @@
                     return true;
                 } catch (err) {
                     console.error("Load Error:", err);
-                    alert(`【読込エラー】\n${err.message}\n\n接続先URL: ${url}`);
+                    alert(`【診断結果】\n${err.message}\n\n接続先: ${fileUrl}`);
                     setView('settings');
                     return false;
                 } finally {
@@ -108,11 +113,11 @@
                     const res = await fetch(url, {
                         method: 'PUT',
                         headers: { 
-                            "Authorization": `token ${config.token}`, 
+                            "Authorization": `token ${config.token.trim()}`, 
                             "Content-Type": "application/json",
                             "Accept": "application/vnd.github.v3+json"
                         },
-                        body: JSON.stringify({ message: "Log update v5.6", content, sha: fileSha })
+                        body: JSON.stringify({ message: "Update logs v5.7", content, sha: fileSha })
                     });
                     
                     if (!res.ok) {
@@ -125,7 +130,7 @@
                     setFileSha(data.content.sha);
                     setView('history');
                 } catch (err) {
-                    alert(`【保存エラー】\n${err.message}\n\n権限不足（403）の場合はトークンの権限を再確認してください。`);
+                    alert(`【保存失敗】\n${err.message}\n\n403(Forbidden)の場合、トークンの'Contents'権限が'Read and Write'になっているか確認してください。`);
                 } finally {
                     setLoading(false);
                 }
@@ -140,7 +145,6 @@
                     repo: config.repo.trim().split('/').pop()
                 };
                 
-                // 通信テストを行う
                 const success = await loadData(cleanedConfig);
                 if (success) {
                     localStorage.setItem('lean_forge_config', JSON.stringify(cleanedConfig));
@@ -150,7 +154,7 @@
             };
 
             const resetSettings = () => {
-                if (confirm("設定を初期化しますか？(GitHubのデータは消えません)")) {
+                if (confirm("設定を初期化しますか？")) {
                     localStorage.removeItem('lean_forge_config');
                     window.location.reload();
                 }
@@ -181,7 +185,7 @@
                             <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-bolt text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v5.6 Resurrection</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v5.7 Diagnostics</p>
                             </div>
                         </div>
                         <button onClick={() => setView('settings')} className="text-slate-600 p-2 hover:text-blue-500 transition-colors"><i className="fas fa-cog text-xl"></i></button>
@@ -198,22 +202,22 @@
                     <main className="max-w-md mx-auto">
                         {view === 'settings' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
-                                <h2 className="text-xl font-black mb-6 flex items-center gap-2"><i className="fas fa-key text-blue-500"></i> 設定</h2>
+                                <h2 className="text-xl font-black mb-6 flex items-center gap-2"><i className="fas fa-key text-blue-500"></i> 同期設定</h2>
                                 <form onSubmit={saveConfig} className="space-y-4">
                                     <div>
                                         <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block">GitHub Owner (ユーザー名)</label>
-                                        <input type="text" value={config.owner} onChange={e => setConfig({...config, owner: e.target.value})} placeholder="ken-nii" className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm" required />
+                                        <input type="text" value={config.owner} onChange={e => setConfig({...config, owner: e.target.value})} placeholder="k87style-svg" className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm" required />
                                     </div>
                                     <div>
                                         <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block">GitHub Repo (リポジトリ名)</label>
-                                        <input type="text" value={config.repo} onChange={e => setConfig({...config, repo: e.target.value})} placeholder="gym-log" className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm" required />
+                                        <input type="text" value={config.repo} onChange={e => setConfig({...config, repo: e.target.value})} placeholder="LEAN-FORGE" className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm" required />
                                     </div>
                                     <div>
                                         <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block">GitHub Token</label>
                                         <input type="password" value={config.token} onChange={e => setConfig({...config, token: e.target.value})} placeholder="github_pat_..." className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm" required />
                                     </div>
                                     <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl shadow-blue-900/40 active:scale-[0.98] transition-all">
-                                        {loading ? 'CONNECTING...' : '接続して保存'}
+                                        {loading ? 'TESTING...' : '接続テストして保存'}
                                     </button>
                                     <button type="button" onClick={resetSettings} className="w-full py-3 text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-red-500">設定をリセット</button>
                                 </form>
