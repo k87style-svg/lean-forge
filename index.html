@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Safe Sync v5.4.2</title>
+    <title>LEAN FORGE | Safe Sync v5.4.3</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -56,13 +56,15 @@
             }, [config]);
 
             const loadData = async () => {
+                if (!config.token || !config.owner || !config.repo) return;
                 setLoading(true);
                 try {
-                    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
-                        headers: { "Authorization": `token ${config.token}`, "Cache-Control": "no-cache" }
+                    const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${config.path.trim()}`;
+                    const res = await fetch(url, {
+                        headers: { "Authorization": `token ${config.token.trim()}`, "Cache-Control": "no-cache" }
                     });
                     
-                    if (res.status === 401) throw new Error("401 (認証エラー: トークンが正しくありません)");
+                    if (res.status === 401) throw new Error("401 (トークンが無効です。再発行が必要かもしれません)");
                     if (res.status === 404) {
                         setLogs([]);
                         setFileSha(null);
@@ -77,8 +79,8 @@
                         setFileSha(data.sha);
                     }
                 } catch (err) {
-                    console.error(err);
-                    alert(`【読込エラー報告】\n${err.message}`);
+                    console.error("Load Error:", err);
+                    alert(`【読込エラー】\n${err.message}\n\nネットワーク設定やGitHub情報が正しいか確認してください。`);
                     setView('settings');
                 } finally {
                     setLoading(false);
@@ -92,10 +94,11 @@
                 const content = btoa(unescape(encodeURIComponent(JSON.stringify(updatedLogs, null, 2))));
                 
                 try {
-                    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
+                    const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${config.path.trim()}`;
+                    const res = await fetch(url, {
                         method: 'PUT',
-                        headers: { "Authorization": `token ${config.token}`, "Content-Type": "application/json" },
-                        body: JSON.stringify({ message: "Sync v5.4.2", content, sha: fileSha })
+                        headers: { "Authorization": `token ${config.token.trim()}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ message: "Sync v5.4.3", content, sha: fileSha })
                     });
                     
                     if (!res.ok) {
@@ -114,7 +117,7 @@
                     setFileSha(data.content.sha);
                     setView('history');
                 } catch (err) {
-                    alert(`【同期エラー報告】\n${err.message}\n\n【判定ガイド】\n403: 権限不足 (Contents: Writeが必要)\n404: リポジトリ名/ID間違い\n401: トークン間違い`);
+                    alert(`【同期エラー】\n${err.message}\n\n設定を確認してください。`);
                 } finally {
                     setLoading(false);
                 }
@@ -122,9 +125,25 @@
 
             const saveConfig = (e) => {
                 e.preventDefault();
-                localStorage.setItem('lean_forge_config', JSON.stringify(config));
+                // 空白を自動削除して保存
+                const cleanedConfig = {
+                    ...config,
+                    token: config.token.trim(),
+                    owner: config.owner.trim(),
+                    repo: config.repo.trim()
+                };
+                localStorage.setItem('lean_forge_config', JSON.stringify(cleanedConfig));
+                setConfig(cleanedConfig);
                 setView('input');
-                loadData();
+            };
+
+            const resetSettings = () => {
+                if (confirm("設定を初期化しますか？(記録データ自体はGitHubに保管されているので消えません)")) {
+                    localStorage.removeItem('lean_forge_config');
+                    setConfig({ token: "", owner: "", repo: "", path: "data/training_logs.json" });
+                    setLogs([]);
+                    setView('settings');
+                }
             };
 
             const chartData = useMemo(() => {
@@ -148,16 +167,16 @@
                             <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-bolt text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v5.4.2 Safe Sync</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v5.4.3 Safe Sync</p>
                             </div>
                         </div>
-                        <button onClick={() => setView('settings')} className="text-slate-600"><i className="fas fa-cog text-xl"></i></button>
+                        <button onClick={() => setView('settings')} className="text-slate-600 p-2 hover:text-blue-500 transition-colors"><i className="fas fa-cog text-xl"></i></button>
                     </header>
 
                     {view !== 'settings' && (
                         <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
                             {['input', 'guide', 'history', 'trends'].map(t => (
-                                <button key={t} onClick={() => setView(t)} className={"flex-1 py-3 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all " + (view === t ? 'active-tab' : 'text-slate-500')}>{t}</button>
+                                <button key={t} onClick={() => setView(t)} className={"flex-1 py-3.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all " + (view === t ? 'active-tab' : 'text-slate-500')}>{t}</button>
                             ))}
                         </nav>
                     )}
@@ -180,8 +199,11 @@
                                             />
                                         </div>
                                     ))}
-                                    <button type="submit" className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl shadow-blue-900/40">設定を保存して開始</button>
-                                    <p className="text-[10px] text-slate-500 text-center leading-relaxed">設定はブラウザに保存され、GitHub上のコードには残りません。</p>
+                                    <button type="submit" className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl shadow-blue-900/40 active:scale-[0.98] transition-all">設定を保存して開始</button>
+                                    
+                                    <button type="button" onClick={resetSettings} className="w-full py-3 text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-red-500 transition-colors">設定をリセットする</button>
+
+                                    <p className="text-[10px] text-slate-500 text-center leading-relaxed mt-4">設定はブラウザに保存され、GitHub上のコードには残りません。</p>
                                 </form>
                             </div>
                         )}
