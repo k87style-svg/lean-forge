@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Clean Start v5.8</title>
+    <title>LEAN FORGE | Bridge Edition v5.9</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -37,8 +37,12 @@
 
         function App() {
             const [config, setConfig] = useState(() => {
-                const saved = localStorage.getItem('lean_forge_config');
-                return saved ? JSON.parse(saved) : { token: "", owner: "", repo: "", path: "data/training_logs.json" };
+                try {
+                    const saved = localStorage.getItem('lean_forge_config');
+                    return saved ? JSON.parse(saved) : { token: "", owner: "", repo: "", path: "data/training_logs.json" };
+                } catch (e) {
+                    return { token: "", owner: "", repo: "", path: "data/training_logs.json" };
+                }
             });
             const [logs, setLogs] = useState([]);
             const [selM, setSelM] = useState(MACHINE_LIST[0]);
@@ -60,40 +64,39 @@
                 if (!c.owner || !c.repo) return;
                 
                 setLoading(true);
-                const baseUrl = `https://api.github.com/repos/${c.owner.trim()}/${c.repo.trim()}`;
-                const fileUrl = `${baseUrl}/contents/${c.path.trim()}`;
+                // 文字列結合でURLを確実に生成
+                const owner = c.owner.trim();
+                const repo = c.repo.trim();
+                const path = c.path.trim();
+                const fileUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/contents/" + path;
                 
                 try {
-                    // 診断1: ネットワーク自体の疎通確認
-                    await fetch('https://api.github.com/zen').catch(e => {
-                        throw new Error("GitHubへの通信が遮断されています。Wi-Fiを切るか、ブラウザ設定を確認してください。");
-                    });
-
-                    // 診断2: リポジトリの存在確認
-                    const repoCheck = await fetch(baseUrl);
-                    if (repoCheck.status === 404) throw new Error(`リポジトリ '${c.owner}/${c.repo}' が見つかりません。大文字小文字を含め正確に入力してください。`);
-                    
-                    // 診断3: データ取得
                     const headers = { 
                         "Accept": "application/vnd.github.v3+json",
                         "Cache-Control": "no-cache" 
                     };
+                    
                     if (c.token) {
                         const cleanToken = c.token.trim().replace(/^token\s+/i, '');
-                        headers["Authorization"] = `token ${cleanToken}`;
+                        // Bearerとtokenの両方を試すための設定
+                        headers["Authorization"] = "token " + cleanToken;
                     }
 
-                    const res = await fetch(fileUrl, { headers });
+                    const res = await fetch(fileUrl, { 
+                        method: 'GET',
+                        headers: headers,
+                        mode: 'cors'
+                    }).catch(err => {
+                        throw new Error("ネットワーク接続エラー (Failed to fetch)\n※広告ブロックやブラウザの保護機能がGitHubへの通信を遮断している可能性があります。");
+                    });
                     
-                    if (res.status === 401) throw new Error("401: トークンが無効です。GitHubで再発行し、リポジトリをPrivateにするか、Publicなら即座にアプリへ入力してください。");
-                    
+                    if (res.status === 401) throw new Error("401: トークンが無効です。GitHubで再発行してください。");
                     if (res.status === 404) {
                         setLogs([]);
                         setFileSha(null);
                         return true;
                     }
-                    
-                    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+                    if (!res.ok) throw new Error(res.status + ": " + res.statusText);
 
                     const data = await res.json();
                     if (data.content) {
@@ -103,7 +106,7 @@
                     }
                     return true;
                 } catch (err) {
-                    alert(`【読込エラー】\n${err.message}`);
+                    alert("【読込エラー】\n" + err.message + "\n\n接続先: " + fileUrl);
                     setView('settings');
                     return false;
                 } finally {
@@ -116,23 +119,23 @@
                 const newLog = { id: Date.now(), machineName: selM, weight: Number(weight), reps: Number(reps), sets: Number(sets), date: new Date().toISOString() };
                 const updatedLogs = [newLog, ...logs];
                 const content = btoa(unescape(encodeURIComponent(JSON.stringify(updatedLogs, null, 2))));
-                const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`;
+                const url = "https://api.github.com/repos/" + config.owner.trim() + "/" + config.repo.trim() + "/contents/" + config.path.trim();
                 
                 try {
                     const cleanToken = config.token.trim().replace(/^token\s+/i, '');
                     const res = await fetch(url, {
                         method: 'PUT',
                         headers: { 
-                            "Authorization": `token ${cleanToken}`, 
+                            "Authorization": "token " + cleanToken, 
                             "Content-Type": "application/json",
                             "Accept": "application/vnd.github.v3+json"
                         },
-                        body: JSON.stringify({ message: "Update logs v5.8", content, sha: fileSha })
+                        body: JSON.stringify({ message: "Update logs v5.9", content, sha: fileSha })
                     });
                     
                     if (!res.ok) {
                         const errorBody = await res.json().catch(() => ({ message: res.statusText }));
-                        throw new Error(`${res.status}: ${errorBody.message}`);
+                        throw new Error(res.status + ": " + errorBody.message);
                     }
 
                     const data = await res.json();
@@ -140,7 +143,7 @@
                     setFileSha(data.content.sha);
                     setView('history');
                 } catch (err) {
-                    alert(`【保存失敗】\n${err.message}\n\n※403エラーの場合は、トークンの権限(Contents: Write)が設定されているか確認してください。`);
+                    alert("【保存失敗】\n" + err.message);
                 } finally {
                     setLoading(false);
                 }
@@ -150,7 +153,7 @@
                 e.preventDefault();
                 const cleanedConfig = {
                     ...config,
-                    token: config.token.trim().replace(/^token\s+/i, ''),
+                    token: config.token.trim(),
                     owner: config.owner.trim().split('/').pop(),
                     repo: config.repo.trim().split('/').pop()
                 };
@@ -164,7 +167,7 @@
             };
 
             const fullReset = () => {
-                if (confirm("ブラウザの記憶を完全にリセットしますか？\n(GitHubのデータは消えませんが、トークンなどの再入力が必要になります)")) {
+                if (confirm("設定を完全に初期化してリロードしますか？")) {
                     localStorage.removeItem('lean_forge_config');
                     window.location.reload();
                 }
@@ -195,7 +198,7 @@
                             <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-bolt text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v5.8 Clean Start</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v5.9 Bridge Edition</p>
                             </div>
                         </div>
                         <button onClick={() => setView('settings')} className="text-slate-600 p-2 hover:text-blue-500 transition-colors"><i className="fas fa-cog text-xl"></i></button>
@@ -213,31 +216,36 @@
                         {view === 'settings' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
                                 <h2 className="text-xl font-black mb-6 flex items-center gap-2 text-blue-400">
-                                    <i className="fas fa-sync-alt"></i> 接続リセット & 設定
+                                    <i className="fas fa-network-wired"></i> 接続ブリッジ設定
                                 </h2>
                                 <form onSubmit={saveConfig} className="space-y-4">
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Owner (ユーザー名)</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Owner</label>
                                         <input type="text" value={config.owner} onChange={e => setConfig({...config, owner: e.target.value})} placeholder="k87style-svg" className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Repo (リポジトリ名)</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Repo</label>
                                         <input type="text" value={config.repo} onChange={e => setConfig({...config, repo: e.target.value})} placeholder="LEAN-FORGE" className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Token (新しく発行したもの)</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Token</label>
                                         <input type="password" value={config.token} onChange={e => setConfig({...config, token: e.target.value})} placeholder="github_pat_..." className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl shadow-blue-900/40 active:scale-[0.98] transition-all">
-                                        {loading ? '接続テスト中...' : '新しい設定でテスト & 保存'}
+                                        {loading ? '接続テスト中...' : 'テストして保存'}
                                     </button>
                                     
                                     <div className="pt-6 border-t border-slate-800 mt-6">
                                         <button type="button" onClick={fullReset} className="w-full py-3 bg-red-950/30 text-red-500 text-[10px] font-black uppercase tracking-widest rounded-xl border border-red-900/30 hover:bg-red-900/20 transition-all">
-                                            設定を完全にリセットしてやり直す
+                                            設定を完全にリセット
                                         </button>
                                     </div>
                                 </form>
+                                <div className="mt-6 p-4 bg-blue-900/10 rounded-xl border border-blue-800/20">
+                                    <p className="text-[10px] text-blue-300 leading-relaxed">
+                                        <i className="fas fa-info-circle mr-1"></i> もし「Failed to fetch」が続く場合は、iPhoneの「設定」→「Safari」→「コンテンツブロッカー」を確認し、オフにしてから再度試してみてください。
+                                    </p>
+                                </div>
                             </div>
                         )}
 
