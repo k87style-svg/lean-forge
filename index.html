@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Evolution v5.3</title>
-    <!-- 必要なライブラリの読み込み -->
+    <title>LEAN FORGE | Safe Sync v5.4</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -17,7 +16,7 @@
         select, input { color: white !important; background-color: #0f172a !important; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .active-tab { background-color: #2563eb; color: white; border-color: #3b82f6; }
-        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        .animate-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
@@ -27,28 +26,9 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // ==========================================================
-        // ⚠️ 健兄、ここを以前成功した時のGitHub情報に書き換えてください！
-        // ==========================================================
-        const GITHUB_CONFIG = {
-            token: "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", 
-            owner: "k87style-svg", 
-            repo:  "LEAN-FORGE", 
-            path:  "data/training_logs.json" 
-        };
-
         const START_DATE = new Date("2026-05-18");
         const END_DATE = new Date("2026-08-31");
-
-        const MACHINE_LIST = [
-            "ショルダープレス", "ペクトラル", "レッグエクステンション", 
-            "レッグカール", "チェストプレス", "ローワーバック", 
-            "アブダクター", "アダクター", "ローロー", 
-            "レッグプレス", "トータルアブドミナル", "ロータリートルソー", 
-            "マルチヒップ", "ラットマシン", "ベンチプレス", 
-            "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"
-        ];
-
+        const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
         const ROUTINE = [
             { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
             { day: "Day B", title: "背中・腕裏 (Pull)", items: ["ラットマシン", "ローロー", "ローワーバック", "ロータリートルソー"] },
@@ -56,29 +36,32 @@
         ];
 
         function App() {
+            const [config, setConfig] = useState(() => {
+                const saved = localStorage.getItem('lean_forge_config');
+                return saved ? JSON.parse(saved) : { token: "", owner: "", repo: "", path: "data/training_logs.json" };
+            });
             const [logs, setLogs] = useState([]);
             const [selM, setSelM] = useState(MACHINE_LIST[0]);
             const [weight, setWeight] = useState(20);
             const [reps, setReps] = useState(10);
             const [sets, setSets] = useState(3);
-            const [view, setView] = useState('input');
-            const [loading, setLoading] = useState(true);
+            const [view, setView] = useState(config.token ? 'input' : 'settings');
+            const [loading, setLoading] = useState(false);
             const [fileSha, setFileSha] = useState(null);
 
-            // データの読み込み
             useEffect(() => {
-                if (GITHUB_CONFIG.token === "YOUR_GITHUB_TOKEN") { setLoading(false); return; }
-                loadData();
-            }, []);
+                if (config.token && config.owner && config.repo) {
+                    loadData();
+                }
+            }, [config]);
 
             const loadData = async () => {
+                setLoading(true);
                 try {
-                    const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
-                        headers: { 
-                            "Authorization": `token ${GITHUB_CONFIG.token}`, 
-                            "Cache-Control": "no-cache" 
-                        }
+                    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
+                        headers: { "Authorization": `token ${config.token}`, "Cache-Control": "no-cache" }
                     });
+                    if (res.status === 401) throw new Error("Invalid Token");
                     const data = res.status === 404 ? { content: btoa("[]"), sha: null } : await res.json();
                     if (data.content) {
                         const decoded = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g, '')))));
@@ -86,232 +69,160 @@
                         setFileSha(data.sha);
                     }
                 } catch (err) {
-                    console.error("Fetch Error:", err);
+                    console.error(err);
+                    if (view !== 'settings') setView('settings');
                 } finally {
                     setLoading(false);
                 }
             };
 
-            // データの保存
-            const save = async () => {
-                if (GITHUB_CONFIG.token === "YOUR_GITHUB_TOKEN") {
-                    alert("GitHubの設定が完了していません。25行目付近を確認してください。");
-                    return;
-                }
+            const saveLog = async () => {
                 setLoading(true);
-                const newLog = { 
-                    id: Date.now(), 
-                    machineName: selM, 
-                    weight: Number(weight), 
-                    reps: Number(reps), 
-                    sets: Number(sets), 
-                    date: new Date().toISOString() 
-                };
+                const newLog = { id: Date.now(), machineName: selM, weight: Number(weight), reps: Number(reps), sets: Number(sets), date: new Date().toISOString() };
                 const updatedLogs = [newLog, ...logs];
                 const content = btoa(unescape(encodeURIComponent(JSON.stringify(updatedLogs, null, 2))));
-                
                 try {
-                    const res = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
+                    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/${config.path}`, {
                         method: 'PUT',
-                        headers: { "Authorization": `token ${GITHUB_CONFIG.token}`, "Content-Type": "application/json" },
-                        body: JSON.stringify({ 
-                            message: "Sync Evolution v5.3", 
-                            content, 
-                            sha: fileSha 
-                        })
+                        headers: { "Authorization": `token ${config.token}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ message: "Sync v5.4", content, sha: fileSha })
                     });
+                    if (!res.ok) throw new Error("Sync Failed");
                     const data = await res.json();
                     setLogs(updatedLogs);
                     setFileSha(data.content.sha);
                     setView('history');
                 } catch (err) {
-                    alert("同期に失敗しました。GitHubの設定やトークンを確認してください。");
+                    alert("同期に失敗しました。設定を確認してください。");
                 } finally {
                     setLoading(false);
                 }
             };
 
-            // グラフデータの生成（理想曲線 vs 実績値）
+            const saveConfig = (e) => {
+                e.preventDefault();
+                localStorage.setItem('lean_forge_config', JSON.stringify(config));
+                setView('input');
+            };
+
             const chartData = useMemo(() => {
-                const filtered = logs.filter(l => l.machineName === selM)
-                                  .sort((a, b) => new Date(a.date) - new Date(b.date));
-                
+                const filtered = logs.filter(l => l.machineName === selM).sort((a, b) => new Date(a.date) - new Date(b.date));
                 if (filtered.length === 0) return [];
-
-                const firstLog = filtered[0];
-                const startWeight = Number(firstLog.weight);
-                const targetWeight = startWeight * 1.2; // 8月末までに20%アップを理想とする
-                const totalDays = (END_DATE - START_DATE) / (1000 * 60 * 60 * 24);
-                
-                const points = filtered.map(l => {
-                    const logDate = new Date(l.date);
-                    const daysFromStart = Math.max(0, (logDate - START_DATE) / (1000 * 60 * 60 * 24));
-                    // 理想値の計算
-                    const ideal = startWeight + (targetWeight - startWeight) * (daysFromStart / totalDays);
-                    return {
-                        date: logDate.toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}),
-                        real: Number(l.weight),
-                        ideal: Math.round(ideal * 10) / 10
-                    };
+                const startW = Number(filtered[0].weight);
+                const targetW = startW * 1.2;
+                const totalD = (END_DATE - START_DATE) / 86400000;
+                const pts = filtered.map(l => {
+                    const d = (new Date(l.date) - START_DATE) / 86400000;
+                    return { date: new Date(l.date).toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), real: Number(l.weight), ideal: Math.round((startW + (targetW - startW) * (d / totalD)) * 10) / 10 };
                 });
-
-                // 8/31 ターゲット地点を追加（グラフを伸ばすため）
-                points.push({
-                    date: "08/31",
-                    real: null,
-                    ideal: Math.round(targetWeight * 10) / 10
-                });
-
-                return points;
+                pts.push({ date: "08/31", real: null, ideal: Math.round(targetW * 10) / 10 });
+                return pts;
             }, [logs, selM]);
-
-            if (loading && logs.length === 0) return (
-                <div className="h-screen flex flex-col items-center justify-center bg-slate-950">
-                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-blue-600 mb-4"></div>
-                    <div className="font-black text-blue-500 italic tracking-widest uppercase text-sm animate-pulse">Syncing Forge Core</div>
-                </div>
-            );
 
             return (
                 <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 overflow-x-hidden">
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40">
-                                <i className="fas fa-bolt text-xl"></i>
-                            </div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-bolt text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold tracking-[0.3em] uppercase">v5.3 Evolution Core</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase">v5.4 Safe Sync</p>
                             </div>
                         </div>
+                        <button onClick={() => setView('settings')} className="text-slate-600"><i className="fas fa-cog text-xl"></i></button>
                     </header>
 
-                    <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
-                        {['input', 'guide', 'history', 'trends'].map(t => (
-                            <button 
-                                key={t} 
-                                onClick={() => setView(t)} 
-                                className={"flex-1 py-3.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all " + (view === t ? 'active-tab shadow-lg' : 'text-slate-500')}
-                            >
-                                {t === 'input' ? 'Log' : t === 'guide' ? 'Guide' : t === 'history' ? 'History' : 'Trends'}
-                            </button>
-                        ))}
-                    </nav>
+                    {view !== 'settings' && (
+                        <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
+                            {['input', 'guide', 'history', 'trends'].map(t => (
+                                <button key={t} onClick={() => setView(t)} className={"flex-1 py-3 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest " + (view === t ? 'active-tab' : 'text-slate-500')}>{t}</button>
+                            ))}
+                        </nav>
+                    )}
 
                     <main className="max-w-md mx-auto">
+                        {view === 'settings' && (
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
+                                <h2 className="text-xl font-black mb-6 flex items-center gap-2"><i className="fas fa-key text-blue-500"></i> 設定</h2>
+                                <form onSubmit={saveConfig} className="space-y-4">
+                                    {['owner', 'repo', 'token'].map(f => (
+                                        <div key={f}>
+                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block">{f}</label>
+                                            <input 
+                                                type={f === 'token' ? 'password' : 'text'} 
+                                                value={config[f]} 
+                                                onChange={e => setConfig({...config, [f]: e.target.value})}
+                                                placeholder={f === 'token' ? 'ghp_...' : `Your GitHub ${f}`}
+                                                className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm"
+                                                required
+                                            />
+                                        </div>
+                                    ))}
+                                    <button type="submit" className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4">設定を保存して開始</button>
+                                    <p className="text-[10px] text-slate-500 text-center leading-relaxed">この設定はブラウザに保存されます。<br/>GitHub上のコードには保存されないので安全です。</p>
+                                </form>
+                            </div>
+                        )}
+
                         {view === 'input' && (
-                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 shadow-2xl animate-fade-in">
-                                <div>
-                                    <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block tracking-widest ml-1">Machine Selection</label>
-                                    <select value={selM} onChange={(e) => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none">
-                                        {MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}
-                                    </select>
-                                </div>
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 animate-in">
+                                <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
                                 <div className="grid grid-cols-3 gap-4">
-                                    <div className="text-center">
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block text-blue-400">Kg</label>
-                                        <input type="number" step="0.5" value={weight} onChange={(e) => setWeight(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none" />
-                                    </div>
-                                    <div className="text-center">
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block text-blue-400">Reps</label>
-                                        <input type="number" value={reps} onChange={(e) => setReps(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none" />
-                                    </div>
-                                    <div className="text-center">
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-3 block text-blue-400">Sets</label>
-                                        <input type="number" value={sets} onChange={(e) => setSets(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl text-center font-black text-xl border border-slate-700 outline-none" />
-                                    </div>
+                                    {[{l:'Kg', v:weight, s:setWeight}, {l:'Reps', v:reps, s:setReps}, {l:'Sets', v:sets, s:setSets}].map(f => (
+                                        <div key={f.l} className="text-center">
+                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block">{f.l}</label>
+                                            <input type="number" step="0.5" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-lg border border-slate-700 outline-none" />
+                                        </div>
+                                    ))}
                                 </div>
-                                <button onClick={save} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest text-[13px] shadow-xl shadow-blue-900/50 active:scale-95 transition-all">
-                                    {loading ? 'SYNCING DATA...' : 'RECORD & FORGE'}
-                                </button>
+                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-95">{loading ? 'SYNCING...' : 'RECORD & FORGE'}</button>
                             </div>
                         )}
 
                         {view === 'guide' && (
-                            <div className="space-y-4 animate-fade-in">
+                            <div className="space-y-4 animate-in">
                                 {ROUTINE.map(r => (
-                                    <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span>
-                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-tight">{r.title}</span>
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {r.items.map(i => (
-                                                <span key={i} className="bg-slate-800 text-[11px] px-4 py-2.5 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>
-                                            ))}
-                                        </div>
+                                    <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800">
+                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic">{r.day} Protocol</span><span className="text-xs font-bold text-slate-400">{r.title}</span></div>
+                                        <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[11px] px-3 py-2 rounded-xl border border-slate-700">{i}</span>)}</div>
                                     </div>
                                 ))}
                             </div>
                         )}
 
                         {view === 'history' && (
-                            <div className="space-y-4 animate-fade-in">
-                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest">No logs found in cloud</div> : logs.map(log => (
+                            <div className="space-y-4 animate-in">
+                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase">No logs in cloud</div> : logs.map(log => (
                                     <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
-                                        <div>
-                                            <div className="font-black text-slate-200 text-[15px]">{log.machineName}</div>
-                                            <div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest"><i className="far fa-calendar-alt mr-1"></i> {new Date(log.date).toLocaleDateString()}</div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div>
-                                            <div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div>
-                                        </div>
+                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase">{new Date(log.date).toLocaleDateString()}</div></div>
+                                        <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic">{log.reps}R × {log.sets}S</div></div>
                                     </div>
                                 ))}
                             </div>
                         )}
 
                         {view === 'trends' && (
-                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-fade-in">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h2 className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1">Real vs Ideal Trajectory</h2>
-                                    <div className="flex gap-4 text-[9px] font-bold uppercase tracking-tighter">
-                                        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-blue-600 rounded-full"></span> Real</span>
-                                        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 border border-slate-600 rounded-full"></span> Ideal</span>
-                                    </div>
-                                </div>
-                                <select value={selM} onChange={(e) => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl mb-8 border border-slate-700 font-black text-white outline-none">
-                                    {MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
+                                <div className="flex justify-between items-center mb-6"><h2 className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1">Real vs Ideal Trajectory</h2><div className="flex gap-4 text-[9px] font-bold uppercase"><span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-blue-600 rounded-full"></span> Real</span><span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 border border-slate-600 rounded-full"></span> Ideal</span></div></div>
+                                <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl mb-8 border border-slate-700 font-black outline-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
                                 <div className="h-72 -ml-4">
                                     {chartData.length > 1 ? (
                                         <Recharts.ResponsiveContainer width="100%" height="100%">
                                             <Recharts.ComposedChart data={chartData}>
-                                                <defs>
-                                                    <linearGradient id="realGrad" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
-                                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                                                    </linearGradient>
-                                                </defs>
-                                                <Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
-                                                <Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} />
-                                                <Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
-                                                <Recharts.Tooltip contentStyle={{backgroundColor: '#0f172a', border: 'none', borderRadius: '16px', color: '#fff', fontSize: '12px'}} />
-                                                <Recharts.Area type="monotone" dataKey="real" stroke="#3b82f6" fill="url(#realGrad)" strokeWidth={4} dot={{r: 5, fill: '#3b82f6', strokeWidth: 0}} />
-                                                <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={false} />
+                                                <defs><linearGradient id="rG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                                                <Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" /><Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} /><Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
+                                                <Recharts.Area type="monotone" dataKey="real" stroke="#3b82f6" fill="url(#rG)" strokeWidth={4} dot={{r: 5, fill: '#3b82f6'}} />
+                                                <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                                             </Recharts.ComposedChart>
                                         </Recharts.ResponsiveContainer>
-                                    ) : (
-                                        <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-20 text-center">
-                                            <i className="fas fa-chart-line text-4xl mb-2"></i>
-                                            <p className="text-[10px] uppercase font-black tracking-widest leading-loose">Analyzing trajectory...<br/>Input records to unlock curve.</p>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="mt-8 pt-6 border-t border-slate-800 text-center">
-                                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">Target Horizon: Aug 31, 2026</p>
+                                    ) : <div className="h-full flex items-center justify-center opacity-20 text-[10px] font-black uppercase">Need more data</div>}
                                 </div>
                             </div>
                         )}
                     </main>
-                    <footer className="text-center py-12 opacity-20">
-                        <p className="text-[8px] font-black tracking-[0.5em] uppercase italic underline decoration-blue-500 decoration-2 underline-offset-4">Forge Your Destiny</p>
-                    </footer>
                 </div>
             );
         }
-
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
