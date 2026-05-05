@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Ghost Protocol v6.0</title>
+    <title>LEAN FORGE | Solid Link v6.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -59,26 +59,29 @@
                 }
             }, []);
 
-            // 汎用通信関数（ステルスモード）
-            const secureFetch = async (url, options = {}) => {
-                const defaultOptions = {
-                    mode: 'cors',
-                    credentials: 'omit',
-                    referrerPolicy: 'no-referrer',
-                    headers: {
-                        "Accept": "application/vnd.github+json",
-                        "Cache-Control": "no-cache"
-                    }
+            // シンプルかつ堅牢な通信関数
+            const gitHubFetch = async (url, options = {}) => {
+                const headers = {
+                    "Accept": "application/vnd.github+json"
                 };
                 
-                const mergedOptions = { ...defaultOptions, ...options };
                 if (config.token) {
-                    mergedOptions.headers["Authorization"] = "token " + config.token.trim().replace(/^token\s+/i, '');
+                    const cleanToken = config.token.trim().replace(/^token\s+/i, '');
+                    headers["Authorization"] = "token " + cleanToken;
                 }
 
-                return await fetch(url, mergedOptions).catch(err => {
-                    throw new Error("通信が遮断されました(Failed to fetch)。\nブラウザの保護機能や広告ブロックをOFFにしてください。");
-                });
+                const fetchOptions = {
+                    ...options,
+                    headers: { ...headers, ...options.headers }
+                };
+
+                try {
+                    const response = await fetch(url, fetchOptions);
+                    return response;
+                } catch (err) {
+                    // ここで生のエラー内容を取得
+                    throw new Error("ブラウザ接続エラー: " + err.message + "\n(GitHubサーバーに到達できていません)");
+                }
             };
 
             const loadData = async (overrideConfig) => {
@@ -89,9 +92,9 @@
                 const fileUrl = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim();
                 
                 try {
-                    const res = await secureFetch(fileUrl);
+                    const res = await gitHubFetch(fileUrl);
                     
-                    if (res.status === 401) throw new Error("401: トークンが無効です。");
+                    if (res.status === 401) throw new Error("401: トークンが無効または有効期限切れです。");
                     if (res.status === 404) {
                         setLogs([]);
                         setFileSha(null);
@@ -118,15 +121,16 @@
             const testConnection = async () => {
                 setLoading(true);
                 try {
-                    const res = await secureFetch("https://api.github.com/zen");
+                    // APIの生存確認
+                    const res = await gitHubFetch("https://api.github.com/zen");
                     if (res.ok) {
                         const text = await res.text();
-                        alert("✅ 通信成功！\nGitHubからメッセージが届きました：\n\n「" + text + "」");
+                        alert("✅ 通信成功！\nGitHubから筋肉への格言：\n\n「" + text + "」");
                     } else {
-                        throw new Error(res.status);
+                        throw new Error("HTTP Status: " + res.status);
                     }
                 } catch (e) {
-                    alert("❌ 通信失敗\n理由: " + e.message);
+                    alert("❌ 通信失敗\nエラー内容: " + e.message + "\n\n【対策】Wi-Fiを切って4G/5Gにするか、Safariのプライベートモードをお試しください。");
                 } finally {
                     setLoading(false);
                 }
@@ -140,10 +144,10 @@
                 const url = "https://api.github.com/repos/" + config.owner.trim() + "/" + config.repo.trim() + "/contents/" + config.path.trim();
                 
                 try {
-                    const res = await secureFetch(url, {
+                    const res = await gitHubFetch(url, {
                         method: 'PUT',
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ message: "Ghost Sync v6.0", content, sha: fileSha })
+                        body: JSON.stringify({ message: "Update logs v6.1", content, sha: fileSha })
                     });
                     
                     if (!res.ok) {
@@ -206,10 +210,10 @@
                 <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 overflow-x-hidden">
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-ghost text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-link text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.0 Ghost Protocol</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.1 Solid Link</p>
                             </div>
                         </div>
                         <button onClick={() => setView('settings')} className="text-slate-600 p-2 hover:text-blue-500 transition-colors"><i className="fas fa-cog text-xl"></i></button>
@@ -227,40 +231,34 @@
                         {view === 'settings' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
                                 <h2 className="text-xl font-black mb-6 flex items-center gap-2 text-blue-400">
-                                    <i className="fas fa-shield-alt"></i> セキュリティ設定
+                                    <i className="fas fa-plug"></i> 接続設定
                                 </h2>
                                 <form onSubmit={saveConfig} className="space-y-4">
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Owner</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Owner (ユーザー名)</label>
                                         <input type="text" value={config.owner} onChange={e => setConfig({...config, owner: e.target.value})} placeholder="k87style-svg" className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Repo</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Repo (リポジトリ名)</label>
                                         <input type="text" value={config.repo} onChange={e => setConfig({...config, repo: e.target.value})} placeholder="LEAN-FORGE" className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Token</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Token (通行証)</label>
                                         <input type="password" value={config.token} onChange={e => setConfig({...config, token: e.target.value})} placeholder="github_pat_..." className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl shadow-blue-900/40 active:scale-[0.98] transition-all">
-                                        {loading ? '通信中...' : '設定を保存して開始'}
+                                        {loading ? '通信テスト中...' : '接続して保存'}
                                     </button>
                                     
                                     <div className="pt-6 grid grid-cols-2 gap-4 mt-6 border-t border-slate-800">
                                         <button type="button" onClick={testConnection} className="py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl border border-slate-700">
-                                            GitHub接続テスト
+                                            接続テスト
                                         </button>
                                         <button type="button" onClick={fullReset} className="py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl border border-red-900/20">
                                             設定リセット
                                         </button>
                                     </div>
                                 </form>
-                                <div className="mt-8 p-4 bg-blue-900/10 rounded-xl border border-blue-800/20">
-                                    <p className="text-[9px] text-blue-300 leading-relaxed font-bold">
-                                        <i className="fas fa-exclamation-triangle mr-1"></i> iPhoneユーザーへ：<br/>
-                                        iPhoneの「設定」＞「Safari」＞「サイト越えトラッキングを防ぐ」を一時的に【オフ】にすると通信が通る場合があります。
-                                    </p>
-                                </div>
                             </div>
                         )}
 
