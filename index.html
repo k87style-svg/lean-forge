@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Quantum Sync v7.1</title>
+    <title>LEAN FORGE | Infinity Sync v7.2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -58,7 +58,7 @@
 
             const showMsg = (txt, isError = false) => {
                 setMessage({ txt, isError });
-                setTimeout(() => setMessage(null), 4000);
+                setTimeout(() => setMessage(null), 5000);
             };
 
             useEffect(() => {
@@ -72,20 +72,19 @@
                 return 'token ' + clean;
             };
 
+            // GitHubから最新のSHA（指紋）とデータを取得する関数
             const fetchLatestData = async (c, silent = false) => {
                 if (!c.token || !c.owner || !c.repo) return null;
                 if (!silent) setLoading(true);
                 
-                // 強力なキャッシュ無効化
-                const url = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim() + "?nocache=" + Date.now();
+                const url = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim() + "?t=" + Date.now();
                 
                 try {
                     const res = await fetch(url, {
                         headers: { 
                             "Accept": "application/vnd.github+json",
                             "Authorization": getAuthHeader(c.token),
-                            "Cache-Control": "no-cache, no-store, must-revalidate",
-                            "Pragma": "no-cache"
+                            "Cache-Control": "no-cache, no-store, must-revalidate"
                         }
                     });
                     
@@ -94,7 +93,8 @@
                         setFileSha(null);
                         return { logs: [], sha: null };
                     }
-                    if (!res.ok) throw new Error(res.status);
+                    
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
                     const data = await res.json();
                     const decoded = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g, '')))));
@@ -105,7 +105,7 @@
                     
                     return { logs: currentLogs, sha: data.sha };
                 } catch (err) {
-                    if (!silent) showMsg("同期失敗: " + err.message, true);
+                    if (!silent) showMsg("同期エラー: " + err.message, true);
                     return null;
                 } finally {
                     if (!silent) setLoading(false);
@@ -131,15 +131,16 @@
                 }
             };
 
-            const performSave = async (logsToWrite, sha, attempt = 1) => {
+            // 実際の書き込み処理を行う関数
+            const performWrite = async (logsToWrite, sha, attempt = 1) => {
                 const url = "https://api.github.com/repos/" + config.owner.trim() + "/" + config.repo.trim() + "/contents/" + config.path.trim();
                 const content = btoa(unescape(encodeURIComponent(JSON.stringify(logsToWrite, null, 2))));
                 
-                const requestBody = {
-                    message: "Quantum Sync v7.1 (" + attempt + ")",
+                const body = {
+                    message: `Infinity Sync v7.2 (Attempt ${attempt})`,
                     content: content
                 };
-                if (sha) requestBody.sha = sha;
+                if (sha) body.sha = sha;
 
                 const res = await fetch(url, {
                     method: 'PUT',
@@ -148,33 +149,37 @@
                         "Authorization": getAuthHeader(config.token),
                         "Accept": "application/vnd.github+json"
                     },
-                    body: JSON.stringify(requestBody)
+                    body: JSON.stringify(body)
                 });
 
                 if (res.ok) {
-                    const resultData = await res.json();
-                    return resultData.content.sha;
-                } else if ((res.status === 422 || res.status === 409) && attempt < 3) {
-                    // 422/409エラー（競合）時は、その場でもう一度最新SHAを取得して再試行
-                    console.log("422 Error detected. Retrying with fresh SHA...");
+                    const data = await res.json();
+                    return data.content.sha;
+                } else if ((res.status === 422 || res.status === 409) && attempt < 4) {
+                    // 競合エラー時は、指数バックオフで待機してからリトライ
+                    const delay = attempt * 500;
+                    console.log(`Conflict detected. Retrying after ${delay}ms...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    
                     const fresh = await fetchLatestData(config, true);
-                    if (!fresh) throw new Error("Retry failed to fetch fresh SHA");
-                    return await performSave(logsToWrite, fresh.sha, attempt + 1);
+                    if (!fresh) throw new Error(`再試行用の指紋取得に失敗しました (Status: ${res.status})`);
+                    
+                    return await performWrite(logsToWrite, fresh.sha, attempt + 1);
                 } else {
-                    const errorBody = await res.json().catch(() => ({}));
-                    throw new Error(res.status + (errorBody.message ? ": " + errorBody.message : ""));
+                    const errText = await res.text();
+                    throw new Error(`${res.status}: ${errText.slice(0, 50)}`);
                 }
             };
 
             const saveLog = async () => {
                 setLoading(true);
                 try {
-                    // 1. まず現在の最新を取得
+                    // 1. 保存直前に最新状態を取得
                     const latest = await fetchLatestData(config, true);
                     const currentLogs = latest ? latest.logs : logs;
                     const currentSha = latest ? latest.sha : fileSha;
 
-                    // 2. データを追加
+                    // 2. 新規レコード作成
                     const newLog = { 
                         id: Date.now(), 
                         machineName: selM, 
@@ -185,12 +190,12 @@
                     };
                     const updatedLogs = [newLog, ...currentLogs];
 
-                    // 3. 実行（422リトライ機能付き）
-                    const newSha = await performSave(updatedLogs, currentSha);
+                    // 3. 書き込み（自動リトライ付）
+                    const newSha = await performWrite(updatedLogs, currentSha);
                     
                     setLogs(updatedLogs);
                     setFileSha(newSha);
-                    showMsg("✅ 記録を刻みました");
+                    showMsg("✅ 筋肉の記録を刻みました");
                     setView('history');
                 } catch (err) {
                     showMsg("保存エラー: " + err.message, true);
@@ -249,10 +254,10 @@
 
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-atom text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-infinity text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v7.1 Quantum Sync</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v7.2 Infinity Sync</p>
                             </div>
                         </div>
                         <button onClick={() => setView('settings')} className="text-slate-600 p-2"><i className="fas fa-cog text-xl"></i></button>
@@ -269,7 +274,7 @@
                     <main className="max-w-md mx-auto">
                         {view === 'settings' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in space-y-6">
-                                <h2 className="text-xl font-black flex items-center gap-2 text-blue-400"><i className="fas fa-microchip"></i> 同期エンジン v7.1</h2>
+                                <h2 className="text-xl font-black flex items-center gap-2 text-blue-400"><i className="fas fa-wifi"></i> 同期エンジン v7.2</h2>
                                 <form onSubmit={saveConfig} className="space-y-4">
                                     {['owner', 'repo', 'token'].map(f => (
                                         <div key={f}>
@@ -288,16 +293,10 @@
                                     </button>
                                     
                                     <div className="pt-6 border-t border-slate-800 grid grid-cols-2 gap-3">
-                                        <button type="button" onClick={() => fetchLatestData(config)} className="py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl border border-slate-700">最新を強制取得</button>
+                                        <button type="button" onClick={() => fetchLatestData(config)} className="py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl border border-slate-700">最新を強制同期</button>
                                         <button type="button" onClick={() => {if(confirm('設定をリロードしますか？')){localStorage.removeItem('lean_forge_config'); window.location.reload();}}} className="py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl border border-red-900/20">全初期化</button>
                                     </div>
                                 </form>
-                                <div className="p-4 bg-blue-900/10 rounded-2xl border border-blue-800/20">
-                                    <p className="text-[9px] text-blue-300 leading-relaxed font-bold">
-                                        <i className="fas fa-magic mr-1"></i> 422エラー対策済み：<br/>
-                                        保存失敗時に自動でリトライを行う Quantum Sync エンジンを搭載しました。
-                                    </p>
-                                </div>
                             </div>
                         )}
 
@@ -312,7 +311,7 @@
                                         </div>
                                     ))}
                                 </div>
-                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">{loading ? 'QUANTUM SYNCING...' : 'RECORD & FORGE'}</button>
+                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">{loading ? 'STABILIZING...' : 'RECORD & FORGE'}</button>
                             </div>
                         )}
 
