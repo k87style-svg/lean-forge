@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Apex Sync v6.8</title>
+    <title>LEAN FORGE | Core Sync v6.9</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -63,7 +63,7 @@
 
             useEffect(() => {
                 if (config.token && config.owner && config.repo) {
-                    loadData(config, true);
+                    fetchLatestData(config, true);
                 }
             }, []);
 
@@ -72,11 +72,11 @@
                 return 'token ' + clean;
             };
 
-            const loadData = async (overrideConfig, silent = false) => {
-                const c = overrideConfig || config;
-                if (!c.token || !c.owner || !c.repo) return false;
-                
+            // 最新のデータを取得する中核関数
+            const fetchLatestData = async (c, silent = false) => {
+                if (!c.token || !c.owner || !c.repo) return null;
                 if (!silent) setLoading(true);
+                
                 const url = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim();
                 
                 try {
@@ -88,24 +88,21 @@
                         }
                     });
                     
-                    if (res.status === 404) {
-                        setLogs([]);
-                        setFileSha(null);
-                        return true;
-                    }
-                    
+                    if (res.status === 404) return { logs: [], sha: null };
                     if (!res.ok) throw new Error(res.status);
 
                     const data = await res.json();
-                    if (data.content) {
-                        const decoded = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g, '')))));
-                        setLogs(Array.isArray(decoded) ? decoded : []);
-                        setFileSha(data.sha);
-                    }
-                    return true;
+                    const decoded = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g, '')))));
+                    const currentLogs = Array.isArray(decoded) ? decoded : [];
+                    
+                    // 状態を更新
+                    setLogs(currentLogs);
+                    setFileSha(data.sha);
+                    
+                    return { logs: currentLogs, sha: data.sha };
                 } catch (err) {
-                    if (!silent) showMsg("データの読み込みに失敗しました (" + err.message + ")", true);
-                    return false;
+                    if (!silent) showMsg("読み込み失敗: " + err.message, true);
+                    return null;
                 } finally {
                     if (!silent) setLoading(false);
                 }
@@ -133,15 +130,31 @@
             const saveLog = async () => {
                 setLoading(true);
                 
-                // 保存前に最新のSHAを取得して競合を防ぐ (スマホ/PC同期対策)
-                await loadData(config, true);
-
-                const newLog = { id: Date.now(), machineName: selM, weight: Number(weight), reps: Number(reps), sets: Number(sets), date: new Date().toISOString() };
-                const updatedLogs = [newLog, ...logs];
-                const content = btoa(unescape(encodeURIComponent(JSON.stringify(updatedLogs, null, 2))));
-                const url = "https://api.github.com/repos/" + config.owner.trim() + "/" + config.repo.trim() + "/contents/" + config.path.trim();
-                
                 try {
+                    // 1. 保存の直前に「今の本当の最新状態」をGitHubから直接もらう
+                    const latest = await fetchLatestData(config, true);
+                    if (!latest && logs.length > 0) {
+                        throw new Error("最新状態の確認に失敗しました。");
+                    }
+
+                    const currentLogs = latest ? latest.logs : logs;
+                    const currentSha = latest ? latest.sha : fileSha;
+
+                    // 2. 新しいログを作成して結合
+                    const newLog = { 
+                        id: Date.now(), 
+                        machineName: selM, 
+                        weight: Number(weight), 
+                        reps: Number(reps), 
+                        sets: Number(sets), 
+                        date: new Date().toISOString() 
+                    };
+                    const updatedLogs = [newLog, ...currentLogs];
+                    const content = btoa(unescape(encodeURIComponent(JSON.stringify(updatedLogs, null, 2))));
+                    
+                    const url = "https://api.github.com/repos/" + config.owner.trim() + "/" + config.repo.trim() + "/contents/" + config.path.trim();
+                    
+                    // 3. 取得したばかりの指紋（SHA）を使って送信
                     const res = await fetch(url, {
                         method: 'PUT',
                         headers: { 
@@ -149,21 +162,26 @@
                             "Authorization": getAuthHeader(config.token),
                             "Accept": "application/vnd.github+json"
                         },
-                        body: JSON.stringify({ message: "Sync v6.8 Apex", content, sha: fileSha })
+                        body: JSON.stringify({ 
+                            message: "Sync v6.9 Core", 
+                            content: content, 
+                            sha: currentSha 
+                        })
                     });
                     
                     if (!res.ok) {
                         const errorBody = await res.json().catch(() => ({}));
-                        throw new Error(res.status + ": " + (errorBody.message || "Write Error"));
+                        throw new Error(res.status + (errorBody.message ? ": " + errorBody.message : ""));
                     }
 
-                    const data = await res.json();
+                    const resultData = await res.json();
                     setLogs(updatedLogs);
-                    setFileSha(data.content.sha);
-                    showMsg("✅ 記録を同期しました");
+                    setFileSha(resultData.content.sha);
+                    showMsg("✅ 記録完了（同期済み）");
                     setView('history');
                 } catch (err) {
-                    showMsg("保存失敗: " + err.message, true);
+                    showMsg("保存エラー: " + err.message, true);
+                    console.error(err);
                 } finally {
                     setLoading(false);
                 }
@@ -181,7 +199,7 @@
                 localStorage.setItem('lean_forge_config', JSON.stringify(cleanedConfig));
                 setConfig(cleanedConfig);
                 
-                const success = await loadData(cleanedConfig, false);
+                const success = await fetchLatestData(cleanedConfig, false);
                 if (success) {
                     showMsg("設定を保存しました");
                     setView('input');
@@ -221,10 +239,10 @@
 
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-bolt text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-sync text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.8 Apex Sync</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.9 Core Sync</p>
                             </div>
                         </div>
                         <button onClick={() => setView('settings')} className="text-slate-600 p-2"><i className="fas fa-cog text-xl"></i></button>
@@ -259,7 +277,7 @@
                                         {loading ? '通信中...' : '設定を保存して開始'}
                                     </button>
                                     <div className="pt-6 border-t border-slate-800 flex justify-between gap-4">
-                                        <button type="button" onClick={testConnection} className="flex-1 py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl">接続テスト</button>
+                                        <button type="button" onClick={testConnection} className="flex-1 py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl">テスト</button>
                                         <button type="button" onClick={() => {localStorage.removeItem('lean_forge_config'); window.location.reload();}} className="flex-1 py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl">リセット</button>
                                     </div>
                                 </form>
@@ -277,7 +295,7 @@
                                         </div>
                                     ))}
                                 </div>
-                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">{loading ? 'SYNCING...' : 'RECORD & FORGE'}</button>
+                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">{loading ? 'CORE SYNCING...' : 'RECORD & FORGE'}</button>
                             </div>
                         )}
 
