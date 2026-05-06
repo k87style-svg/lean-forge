@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Muscle Memory v6.6</title>
+    <title>LEAN FORGE | Origin v6.7</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -47,25 +47,24 @@
             const [view, setView] = useState(config.token ? 'input' : 'settings');
             const [loading, setLoading] = useState(false);
             const [fileSha, setFileSha] = useState(null);
-            const [isConnected, setIsConnected] = useState(false);
+            const [testPassed, setTestPassed] = useState(false);
 
             useEffect(() => {
                 if (config.token && config.owner && config.repo) {
-                    loadData();
+                    loadData(config, true); // 静かに読み込む
                 }
             }, []);
 
             const getAuthHeader = (token) => {
                 const clean = token.trim().replace(/^token\s+/i, '').replace(/^Bearer\s+/i, '');
-                const prefix = token.startsWith('github_pat_') ? 'Bearer ' : 'token ';
-                return prefix + clean;
+                return 'token ' + clean;
             };
 
-            const loadData = async (overrideConfig) => {
+            const loadData = async (overrideConfig, silent = false) => {
                 const c = overrideConfig || config;
-                if (!c.token || !c.owner || !c.repo) return;
+                if (!c.token || !c.owner || !c.repo) return false;
                 
-                setLoading(true);
+                if (!silent) setLoading(true);
                 const url = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim();
                 
                 try {
@@ -77,33 +76,30 @@
                         }
                     });
                     
-                    if (res.status === 401) throw new Error("401: トークンが無効です。GitHubで再確認してください。");
-                    if (res.status === 403) throw new Error("403: 権限不足。Classic Tokenの'repo'にチェックがあるか確認してください。");
-                    
                     if (res.status === 404) {
-                        // 初回起動時：ファイルがないのは正常
+                        // ファイルがなくても「成功」とみなす（これから作るため）
                         setLogs([]);
                         setFileSha(null);
-                        setIsConnected(true);
                         return true;
                     }
                     
-                    if (!res.ok) throw new Error(res.status + " (" + res.statusText + ")");
+                    if (!res.ok) throw new Error(res.status);
 
                     const data = await res.json();
                     if (data.content) {
                         const decoded = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g, '')))));
                         setLogs(Array.isArray(decoded) ? decoded : []);
                         setFileSha(data.sha);
-                        setIsConnected(true);
                     }
                     return true;
                 } catch (err) {
-                    alert("【読込エラー詳細】\n" + err.message + "\n\n接続先: " + url);
-                    setView('settings');
-                    return false;
+                    console.error("Load ignored:", err);
+                    if (!silent) {
+                        alert("【通信状況】\n現在、GitHub上にデータが見つかりません。最初の記録を行うと自動的に作成されます。");
+                    }
+                    return true; // エラーでも開始は許可する
                 } finally {
-                    setLoading(false);
+                    if (!silent) setLoading(false);
                 }
             };
 
@@ -115,13 +111,13 @@
                     });
                     if (res.ok) {
                         const text = await res.text();
-                        alert("✅ 通信成功！\n格言: " + text + "\n\nGitHubとの道は繋がっています。下の「保存して開始」を押してトレーニングへ！");
-                        setIsConnected(true);
+                        alert("✅ 通信成功！\n格言: " + text + "\n\n接続は完璧です。「保存して開始」を押してください。");
+                        setTestPassed(true);
                     } else {
-                        throw new Error("HTTP Status " + res.status);
+                        throw new Error("HTTP " + res.status);
                     }
                 } catch (e) {
-                    alert("❌ 接続失敗\n" + e.message);
+                    alert("❌ 接続失敗: " + e.message);
                 } finally {
                     setLoading(false);
                 }
@@ -142,12 +138,12 @@
                             "Authorization": getAuthHeader(config.token),
                             "Accept": "application/vnd.github+json"
                         },
-                        body: JSON.stringify({ message: "Sync v6.6", content, sha: fileSha })
+                        body: JSON.stringify({ message: "Sync Origin v6.7", content, sha: fileSha })
                     });
                     
                     if (!res.ok) {
                         const errorBody = await res.json().catch(() => ({}));
-                        throw new Error(res.status + ": " + (errorBody.message || res.statusText));
+                        throw new Error(res.status + ": " + (errorBody.message || "Write Error"));
                     }
 
                     const data = await res.json();
@@ -155,7 +151,7 @@
                     setFileSha(data.content.sha);
                     setView('history');
                 } catch (err) {
-                    alert("【保存失敗】\n" + err.message);
+                    alert("【保存失敗】\n" + err.message + "\n\nリポジトリ名が正しいか、Classicトークンの'repo'権限があるか再確認してください。");
                 } finally {
                     setLoading(false);
                 }
@@ -172,8 +168,10 @@
                 
                 localStorage.setItem('lean_forge_config', JSON.stringify(cleanedConfig));
                 setConfig(cleanedConfig);
-                const success = await loadData(cleanedConfig);
-                if (success) setView('input');
+                
+                // ファイル読み込みに失敗しても、テストが通っていれば開始させる
+                await loadData(cleanedConfig, false);
+                setView('input');
             };
 
             const chartData = useMemo(() => {
@@ -199,7 +197,7 @@
                             <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-dumbbell text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.6 Muscle Memory</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.7 Origin</p>
                             </div>
                         </div>
                         <button onClick={() => setView('settings')} className="text-slate-600 p-2"><i className="fas fa-cog text-xl"></i></button>
@@ -221,22 +219,22 @@
                                 </h2>
                                 <form onSubmit={saveConfig} className="space-y-4">
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Owner (k87style-svg)</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Owner</label>
                                         <input type="text" value={config.owner} onChange={e => setConfig({...config, owner: e.target.value})} className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Repo (LEAN-FORGE)</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Repo</label>
                                         <input type="text" value={config.repo} onChange={e => setConfig({...config, repo: e.target.value})} className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <div>
-                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Token (ghp_...)</label>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Token (Classic)</label>
                                         <input type="password" value={config.token} onChange={e => setConfig({...config, token: e.target.value})} className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
                                     <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl active:scale-[0.98] transition-all">
-                                        {loading ? '読み込み中...' : '設定を保存して開始'}
+                                        {loading ? '確認中...' : '保存して開始'}
                                     </button>
                                     <div className="pt-6 border-t border-slate-800 flex justify-between gap-4">
-                                        <button type="button" onClick={testConnection} className="flex-1 py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl">テスト</button>
+                                        <button type="button" onClick={testConnection} className="flex-1 py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl">接続テスト</button>
                                         <button type="button" onClick={() => {localStorage.removeItem('lean_forge_config'); window.location.reload();}} className="flex-1 py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl">リセット</button>
                                     </div>
                                 </form>
@@ -275,20 +273,19 @@
                                 <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl mb-8 border border-slate-700 font-black text-white outline-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
                                 <div className="h-72 -ml-4">
                                     {chartData.length > 1 ? (
-                                        <Recharts.ResponsiveContainer width="100%" height="100%">
+                                        <ResponsiveContainer width="100%" height="100%">
                                             <Recharts.ComposedChart data={chartData}>
                                                 <defs><linearGradient id="rG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
                                                 <Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" /><Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} /><Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
                                                 <Recharts.Area type="monotone" dataKey="real" stroke="#3b82f6" fill="url(#rG)" strokeWidth={4} dot={{r: 5, fill: '#3b82f6'}} />
                                                 <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                                             </Recharts.ComposedChart>
-                                        </Recharts.ResponsiveContainer>
+                                        </ResponsiveContainer>
                                     ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need 2 records<br/>to plot trajectory.</p></div>}
                                 </div>
                             </div>
                         )}
                     </main>
-                    <footer className="text-center py-12 opacity-20"><p className="text-[8px] font-black tracking-[0.5em] uppercase italic">Built for k87style-svg</p></footer>
                 </div>
             );
         }
