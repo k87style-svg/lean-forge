@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Visual Sync v6.4</title>
+    <title>LEAN FORGE | Muscle Memory v6.6</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -29,12 +29,7 @@
         const START_DATE = new Date("2026-05-18");
         const END_DATE = new Date("2026-08-31");
         const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
-        const ROUTINE = [
-            { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
-            { day: "Day B", title: "背中・腕裏 (Pull)", items: ["ラットマシン", "ローロー", "ローワーバック", "ロータリートルソー"] },
-            { day: "Day C", title: "足・腹筋 (Legs/Abs)", items: ["レッグプレス", "レッグエクステンション", "レッグカール", "トータルアブドミナル", "マルチヒップ", "アダクター", "アブダクター"] }
-        ];
-
+        
         function App() {
             const [config, setConfig] = useState(() => {
                 try {
@@ -52,6 +47,7 @@
             const [view, setView] = useState(config.token ? 'input' : 'settings');
             const [loading, setLoading] = useState(false);
             const [fileSha, setFileSha] = useState(null);
+            const [isConnected, setIsConnected] = useState(false);
 
             useEffect(() => {
                 if (config.token && config.owner && config.repo) {
@@ -59,10 +55,8 @@
                 }
             }, []);
 
-            // 認証ヘッダーの生成（Classic TokenとFine-grained両対応）
             const getAuthHeader = (token) => {
                 const clean = token.trim().replace(/^token\s+/i, '').replace(/^Bearer\s+/i, '');
-                // Classic Token (ghp_) は 'token '、Fine-grained (github_pat_) は 'Bearer ' が推奨されるが、現状のAPIでは 'token ' が最も安定している
                 const prefix = token.startsWith('github_pat_') ? 'Bearer ' : 'token ';
                 return prefix + clean;
             };
@@ -72,7 +66,7 @@
                 if (!c.token || !c.owner || !c.repo) return;
                 
                 setLoading(true);
-                const url = "https://api.github.com/repos/" + c.owner + "/" + c.repo + "/contents/" + c.path;
+                const url = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim();
                 
                 try {
                     const res = await fetch(url, {
@@ -83,24 +77,29 @@
                         }
                     });
                     
-                    if (res.status === 401) throw new Error("401: トークンが正しくありません。再発行が必要かもしれません。");
-                    if (res.status === 403) throw new Error("403: アクセス拒否。トークンの権限（repo または Contents: Read）がありません。");
+                    if (res.status === 401) throw new Error("401: トークンが無効です。GitHubで再確認してください。");
+                    if (res.status === 403) throw new Error("403: 権限不足。Classic Tokenの'repo'にチェックがあるか確認してください。");
+                    
                     if (res.status === 404) {
+                        // 初回起動時：ファイルがないのは正常
                         setLogs([]);
                         setFileSha(null);
+                        setIsConnected(true);
                         return true;
                     }
-                    if (!res.ok) throw new Error(res.status + ": " + res.statusText);
+                    
+                    if (!res.ok) throw new Error(res.status + " (" + res.statusText + ")");
 
                     const data = await res.json();
                     if (data.content) {
                         const decoded = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g, '')))));
                         setLogs(Array.isArray(decoded) ? decoded : []);
                         setFileSha(data.sha);
+                        setIsConnected(true);
                     }
                     return true;
                 } catch (err) {
-                    alert("【読込エラー】\n" + err.message);
+                    alert("【読込エラー詳細】\n" + err.message + "\n\n接続先: " + url);
                     setView('settings');
                     return false;
                 } finally {
@@ -116,9 +115,10 @@
                     });
                     if (res.ok) {
                         const text = await res.text();
-                        alert("✅ 通信成功！\n格言: " + text + "\n\n接続は完璧です！設定を保存して、最初の記録を開始しましょう！");
+                        alert("✅ 通信成功！\n格言: " + text + "\n\nGitHubとの道は繋がっています。下の「保存して開始」を押してトレーニングへ！");
+                        setIsConnected(true);
                     } else {
-                        throw new Error("HTTP " + res.status);
+                        throw new Error("HTTP Status " + res.status);
                     }
                 } catch (e) {
                     alert("❌ 接続失敗\n" + e.message);
@@ -132,7 +132,7 @@
                 const newLog = { id: Date.now(), machineName: selM, weight: Number(weight), reps: Number(reps), sets: Number(sets), date: new Date().toISOString() };
                 const updatedLogs = [newLog, ...logs];
                 const content = btoa(unescape(encodeURIComponent(JSON.stringify(updatedLogs, null, 2))));
-                const url = "https://api.github.com/repos/" + config.owner + "/" + config.repo + "/contents/" + config.path;
+                const url = "https://api.github.com/repos/" + config.owner.trim() + "/" + config.repo.trim() + "/contents/" + config.path.trim();
                 
                 try {
                     const res = await fetch(url, {
@@ -142,7 +142,7 @@
                             "Authorization": getAuthHeader(config.token),
                             "Accept": "application/vnd.github+json"
                         },
-                        body: JSON.stringify({ message: "Update logs v6.4", content, sha: fileSha })
+                        body: JSON.stringify({ message: "Sync v6.6", content, sha: fileSha })
                     });
                     
                     if (!res.ok) {
@@ -155,7 +155,7 @@
                     setFileSha(data.content.sha);
                     setView('history');
                 } catch (err) {
-                    alert("【保存失敗】\n" + err.message + "\n\n※Classic Tokenの'repo'権限にチェックが入っているか確認してください！");
+                    alert("【保存失敗】\n" + err.message);
                 } finally {
                     setLoading(false);
                 }
@@ -166,8 +166,8 @@
                 const cleanedConfig = {
                     ...config,
                     token: config.token.trim(),
-                    owner: config.owner.trim(),
-                    repo: config.repo.trim()
+                    owner: config.owner.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, ''),
+                    repo: config.repo.trim().replace(/^https?:\/\/github\.com\/.*?\//, '').replace(/\/$/, '')
                 };
                 
                 localStorage.setItem('lean_forge_config', JSON.stringify(cleanedConfig));
@@ -176,20 +176,13 @@
                 if (success) setView('input');
             };
 
-            const fullReset = () => {
-                if (confirm("設定を完全に初期化しますか？")) {
-                    localStorage.removeItem('lean_forge_config');
-                    window.location.reload();
-                }
-            };
-
             const chartData = useMemo(() => {
                 const filtered = logs.filter(l => l.machineName === selM).sort((a, b) => new Date(a.date) - new Date(b.date));
                 if (filtered.length === 0) return [];
                 const startW = Number(filtered[0].weight);
                 const targetW = startW * 1.2;
                 const totalD = (END_DATE - START_DATE) / 86400000;
-                const pts = filtered.map(l => {
+                return filtered.map(l => {
                     const d = (new Date(l.date) - START_DATE) / 86400000;
                     return { 
                         date: new Date(l.date).toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), 
@@ -197,26 +190,24 @@
                         ideal: Math.round((startW + (targetW - startW) * (Math.max(0, d) / totalD)) * 10) / 10 
                     };
                 });
-                pts.push({ date: "08/31", real: null, ideal: Math.round(targetW * 10) / 10 });
-                return pts;
             }, [logs, selM]);
 
             return (
                 <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 overflow-x-hidden">
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-sync text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-dumbbell text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.4 Visual Sync</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.6 Muscle Memory</p>
                             </div>
                         </div>
-                        <button onClick={() => setView('settings')} className="text-slate-600 p-2 hover:text-blue-500 transition-colors"><i className="fas fa-cog text-xl"></i></button>
+                        <button onClick={() => setView('settings')} className="text-slate-600 p-2"><i className="fas fa-cog text-xl"></i></button>
                     </header>
 
                     {view !== 'settings' && (
-                        <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
-                            {['input', 'guide', 'history', 'trends'].map(t => (
+                        <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl">
+                            {['input', 'history', 'trends'].map(t => (
                                 <button key={t} onClick={() => setView(t)} className={"flex-1 py-3 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all " + (view === t ? 'active-tab shadow-lg' : 'text-slate-500')}>{t}</button>
                             ))}
                         </nav>
@@ -224,39 +215,31 @@
 
                     <main className="max-w-md mx-auto">
                         {view === 'settings' && (
-                            <div className="space-y-6 animate-in">
-                                <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl">
-                                    <div className="mb-8 p-5 bg-blue-900/20 rounded-3xl border border-blue-800/30 text-center">
-                                        <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-1">Target Repository</p>
-                                        <p className="text-lg font-black text-white">{config.owner} / {config.repo}</p>
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
+                                <h2 className="text-xl font-black mb-6 flex items-center gap-2 text-blue-400">
+                                    <i className="fas fa-unlock-alt"></i> 同期設定
+                                </h2>
+                                <form onSubmit={saveConfig} className="space-y-4">
+                                    <div>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Owner (k87style-svg)</label>
+                                        <input type="text" value={config.owner} onChange={e => setConfig({...config, owner: e.target.value})} className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
                                     </div>
-                                    <form onSubmit={saveConfig} className="space-y-5">
-                                        <div>
-                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest ml-1">GitHub Token (Classic)</label>
-                                            <input type="password" value={config.token} onChange={e => setConfig({...config, token: e.target.value})} placeholder="ghp_..." className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
-                                        </div>
-                                        <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl shadow-blue-900/40 active:scale-[0.98] transition-all">
-                                            {loading ? '接続確認中...' : '設定を保存して開始'}
-                                        </button>
-                                        
-                                        <div className="pt-6 grid grid-cols-2 gap-4 mt-6 border-t border-slate-800">
-                                            <button type="button" onClick={testConnection} className="py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl border border-slate-700">
-                                                接続テスト
-                                            </button>
-                                            <button type="button" onClick={fullReset} className="py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl border border-red-900/20">
-                                                設定リセット
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-
-                                <div className="bg-blue-900/10 rounded-3xl p-6 border border-blue-800/30">
-                                    <h3 className="text-xs font-black text-blue-400 uppercase tracking-widest mb-3">🛠 Classic Token 最終チェック</h3>
-                                    <ul className="text-[11px] text-blue-200/70 space-y-2 leading-relaxed">
-                                        <li className="flex gap-2"><i className="fas fa-check-circle text-blue-500 mt-0.5"></i> <span>発行時に <b>"repo"</b> （リポジトリへのフルアクセス）にチェックを入れましたか？</span></li>
-                                        <li className="flex gap-2"><i className="fas fa-check-circle text-blue-500 mt-0.5"></i> <span>発行後、表示された <b>ghp_...</b> をコピーしてここに貼りましたか？</span></li>
-                                    </ul>
-                                </div>
+                                    <div>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Repo (LEAN-FORGE)</label>
+                                        <input type="text" value={config.repo} onChange={e => setConfig({...config, repo: e.target.value})} className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub Token (ghp_...)</label>
+                                        <input type="password" value={config.token} onChange={e => setConfig({...config, token: e.target.value})} className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" required />
+                                    </div>
+                                    <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl active:scale-[0.98] transition-all">
+                                        {loading ? '読み込み中...' : '設定を保存して開始'}
+                                    </button>
+                                    <div className="pt-6 border-t border-slate-800 flex justify-between gap-4">
+                                        <button type="button" onClick={testConnection} className="flex-1 py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl">テスト</button>
+                                        <button type="button" onClick={() => {localStorage.removeItem('lean_forge_config'); window.location.reload();}} className="flex-1 py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl">リセット</button>
+                                    </div>
+                                </form>
                             </div>
                         )}
 
@@ -277,10 +260,10 @@
 
                         {view === 'history' && (
                             <div className="space-y-4 animate-in">
-                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest">No logs found in cloud</div> : logs.map(log => (
+                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest">No cloud logs yet</div> : logs.map(log => (
                                     <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
-                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{new Date(log.date).toLocaleDateString()}</div></div>
-                                        <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
+                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase">{new Date(log.date).toLocaleDateString()}</div></div>
+                                        <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
                                     </div>
                                 ))}
                             </div>
@@ -288,7 +271,7 @@
 
                         {view === 'trends' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
-                                <div className="flex justify-between items-center mb-6"><h2 className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1 text-blue-400">Real vs Ideal Trajectory</h2></div>
+                                <div className="flex justify-between items-center mb-6"><h2 className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1 text-blue-400">Growth Trajectory</h2></div>
                                 <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl mb-8 border border-slate-700 font-black text-white outline-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
                                 <div className="h-72 -ml-4">
                                     {chartData.length > 1 ? (
@@ -300,25 +283,12 @@
                                                 <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                                             </Recharts.ComposedChart>
                                         </Recharts.ResponsiveContainer>
-                                    ) : <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Analyzing trajectory...<br/>Input records to unlock curve.</p></div>}
+                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need 2 records<br/>to plot trajectory.</p></div>}
                                 </div>
                             </div>
                         )}
-
-                        {view === 'guide' && (
-                            <div className="space-y-4 animate-in">
-                                {ROUTINE.map(r => (
-                                    <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg">
-                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span><span className="text-xs font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
-                                        <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[11px] px-4 py-2.5 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>)}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </main>
-                    <footer className="text-center py-12 opacity-20">
-                        <p className="text-[8px] font-black tracking-[0.5em] uppercase italic underline decoration-blue-500 decoration-2 underline-offset-4">Forge Your Destiny</p>
-                    </footer>
+                    <footer className="text-center py-12 opacity-20"><p className="text-[8px] font-black tracking-[0.5em] uppercase italic">Built for k87style-svg</p></footer>
                 </div>
             );
         }
