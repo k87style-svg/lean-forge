@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Core Sync v6.9</title>
+    <title>LEAN FORGE | Absolute Sync v7.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -18,7 +18,7 @@
         .active-tab { background-color: #2563eb; color: white; border-color: #3b82f6; }
         .animate-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 50; }
+        .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 50; width: 85%; max-width: 350px; }
     </style>
 </head>
 <body>
@@ -72,36 +72,41 @@
                 return 'token ' + clean;
             };
 
-            // 最新のデータを取得する中核関数
+            // 最新データと指紋（SHA）をGitHubから直接、確実に取得する関数
             const fetchLatestData = async (c, silent = false) => {
                 if (!c.token || !c.owner || !c.repo) return null;
                 if (!silent) setLoading(true);
                 
-                const url = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim();
+                // キャッシュを破壊するためにタイムスタンプを付与
+                const url = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim() + "?t=" + Date.now();
                 
                 try {
                     const res = await fetch(url, {
                         headers: { 
                             "Accept": "application/vnd.github+json",
                             "Authorization": getAuthHeader(c.token),
-                            "Cache-Control": "no-cache"
+                            "Cache-Control": "no-cache, no-store, must-revalidate",
+                            "Pragma": "no-cache"
                         }
                     });
                     
-                    if (res.status === 404) return { logs: [], sha: null };
+                    if (res.status === 404) {
+                        setLogs([]);
+                        setFileSha(null);
+                        return { logs: [], sha: null };
+                    }
                     if (!res.ok) throw new Error(res.status);
 
                     const data = await res.json();
                     const decoded = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g, '')))));
                     const currentLogs = Array.isArray(decoded) ? decoded : [];
                     
-                    // 状態を更新
                     setLogs(currentLogs);
                     setFileSha(data.sha);
                     
                     return { logs: currentLogs, sha: data.sha };
                 } catch (err) {
-                    if (!silent) showMsg("読み込み失敗: " + err.message, true);
+                    if (!silent) showMsg("データ同期失敗: " + err.message, true);
                     return null;
                 } finally {
                     if (!silent) setLoading(false);
@@ -118,7 +123,7 @@
                         const text = await res.text();
                         showMsg("✅ 接続成功！格言: " + text);
                     } else {
-                        throw new Error(res.status);
+                        throw new Error("HTTP " + res.status);
                     }
                 } catch (e) {
                     showMsg("❌ 接続失敗: " + e.message, true);
@@ -131,16 +136,18 @@
                 setLoading(true);
                 
                 try {
-                    // 1. 保存の直前に「今の本当の最新状態」をGitHubから直接もらう
+                    // 1. 保存直前に「本当の最新の指紋（SHA）」をキャッシュ無視で取得
                     const latest = await fetchLatestData(config, true);
-                    if (!latest && logs.length > 0) {
-                        throw new Error("最新状態の確認に失敗しました。");
+                    
+                    // fetchLatestDataが失敗（null）かつ、既にデータがある場合は中断して安全を期す
+                    if (latest === null && logs.length > 0) {
+                        throw new Error("最新の指紋が取得できませんでした。");
                     }
 
                     const currentLogs = latest ? latest.logs : logs;
-                    const currentSha = latest ? latest.sha : fileSha;
+                    const currentSha = latest ? latest.sha : null;
 
-                    // 2. 新しいログを作成して結合
+                    // 2. 新しいログを作成
                     const newLog = { 
                         id: Date.now(), 
                         machineName: selM, 
@@ -154,7 +161,16 @@
                     
                     const url = "https://api.github.com/repos/" + config.owner.trim() + "/" + config.repo.trim() + "/contents/" + config.path.trim();
                     
-                    // 3. 取得したばかりの指紋（SHA）を使って送信
+                    // 3. リクエストボディを動的に構築（SHAがないときは絶対に送らない）
+                    const requestBody = {
+                        message: "Absolute Sync v7.0",
+                        content: content
+                    };
+                    if (currentSha) {
+                        requestBody.sha = currentSha;
+                    }
+                    
+                    // 4. 送信
                     const res = await fetch(url, {
                         method: 'PUT',
                         headers: { 
@@ -162,11 +178,7 @@
                             "Authorization": getAuthHeader(config.token),
                             "Accept": "application/vnd.github+json"
                         },
-                        body: JSON.stringify({ 
-                            message: "Sync v6.9 Core", 
-                            content: content, 
-                            sha: currentSha 
-                        })
+                        body: JSON.stringify(requestBody)
                     });
                     
                     if (!res.ok) {
@@ -177,10 +189,10 @@
                     const resultData = await res.json();
                     setLogs(updatedLogs);
                     setFileSha(resultData.content.sha);
-                    showMsg("✅ 記録完了（同期済み）");
+                    showMsg("✅ 筋肉の記録を刻みました");
                     setView('history');
                 } catch (err) {
-                    showMsg("保存エラー: " + err.message, true);
+                    showMsg("保存失敗(422等): " + err.message, true);
                     console.error(err);
                 } finally {
                     setLoading(false);
@@ -201,7 +213,7 @@
                 
                 const success = await fetchLatestData(cleanedConfig, false);
                 if (success) {
-                    showMsg("設定を保存しました");
+                    showMsg("設定を保存し、最新データを同期しました");
                     setView('input');
                 }
             };
@@ -239,13 +251,13 @@
 
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-sync text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-sync text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v6.9 Core Sync</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v7.0 Absolute Sync</p>
                             </div>
                         </div>
-                        <button onClick={() => setView('settings')} className="text-slate-600 p-2"><i className="fas fa-cog text-xl"></i></button>
+                        <button onClick={() => setView('settings')} className="text-slate-600 p-2 hover:text-blue-500 transition-colors"><i className="fas fa-cog text-xl"></i></button>
                     </header>
 
                     {view !== 'settings' && (
@@ -259,11 +271,11 @@
                     <main className="max-w-md mx-auto">
                         {view === 'settings' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
-                                <h2 className="text-xl font-black mb-6 flex items-center gap-2 text-blue-400"><i className="fas fa-key"></i> 同期設定</h2>
+                                <h2 className="text-xl font-black mb-6 flex items-center gap-2 text-blue-400"><i className="fas fa-satellite-dish"></i> 同期設定 v7.0</h2>
                                 <form onSubmit={saveConfig} className="space-y-4">
                                     {['owner', 'repo', 'token'].map(f => (
                                         <div key={f}>
-                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">GitHub {f}</label>
+                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest ml-1">GitHub {f}</label>
                                             <input 
                                                 type={f === 'token' ? 'password' : 'text'} 
                                                 value={config[f]} 
@@ -274,11 +286,11 @@
                                         </div>
                                     ))}
                                     <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-4 shadow-xl active:scale-[0.98] transition-all">
-                                        {loading ? '通信中...' : '設定を保存して開始'}
+                                        {loading ? '通信・同期中...' : '設定を保存して開始'}
                                     </button>
                                     <div className="pt-6 border-t border-slate-800 flex justify-between gap-4">
-                                        <button type="button" onClick={testConnection} className="flex-1 py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl">テスト</button>
-                                        <button type="button" onClick={() => {localStorage.removeItem('lean_forge_config'); window.location.reload();}} className="flex-1 py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl">リセット</button>
+                                        <button type="button" onClick={testConnection} className="flex-1 py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl border border-slate-700">テスト</button>
+                                        <button type="button" onClick={() => {if(confirm('設定をリセットしますか？')){localStorage.removeItem('lean_forge_config'); window.location.reload();}}} className="flex-1 py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl border border-red-900/20">リセット</button>
                                     </div>
                                 </form>
                             </div>
@@ -295,16 +307,16 @@
                                         </div>
                                     ))}
                                 </div>
-                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">{loading ? 'CORE SYNCING...' : 'RECORD & FORGE'}</button>
+                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">{loading ? 'ABSOLUTE SYNCING...' : 'RECORD & FORGE'}</button>
                             </div>
                         )}
 
                         {view === 'history' && (
                             <div className="space-y-4 animate-in">
-                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest">No logs yet</div> : logs.map(log => (
+                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest">No logs found in cloud</div> : logs.map(log => (
                                     <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
-                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase">{new Date(log.date).toLocaleDateString()}</div></div>
-                                        <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
+                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{new Date(log.date).toLocaleDateString()}</div></div>
+                                        <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
                                     </div>
                                 ))}
                             </div>
@@ -324,7 +336,7 @@
                                                 <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                                             </Recharts.ComposedChart>
                                         </Recharts.ResponsiveContainer>
-                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Analyzing...<br/>Input records to see curve.</p></div>}
+                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Analyzing trajectory...<br/>Input records to see curve.</p></div>}
                                 </div>
                             </div>
                         )}
@@ -333,8 +345,8 @@
                             <div className="space-y-4 animate-in">
                                 {ROUTINE.map(r => (
                                     <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg">
-                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day}</span><span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
-                                        <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[10px] px-3 py-2 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>)}</div>
+                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span><span className="text-xs font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
+                                        <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[11px] px-3 py-2 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>)}</div>
                                     </div>
                                 ))}
                             </div>
