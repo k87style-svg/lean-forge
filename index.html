@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Infinity Sync v7.2</title>
+    <title>LEAN FORGE | Nova Sync v7.3</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -53,7 +53,7 @@
             const [sets, setSets] = useState(3);
             const [view, setView] = useState(config.token ? 'input' : 'settings');
             const [loading, setLoading] = useState(false);
-            const [fileSha, setFileSha] = useState(null);
+            const [retryCount, setRetryCount] = useState(0);
             const [message, setMessage] = useState(null);
 
             const showMsg = (txt, isError = false) => {
@@ -72,12 +72,11 @@
                 return 'token ' + clean;
             };
 
-            // GitHubから最新のSHA（指紋）とデータを取得する関数
             const fetchLatestData = async (c, silent = false) => {
                 if (!c.token || !c.owner || !c.repo) return null;
                 if (!silent) setLoading(true);
                 
-                const url = "https://api.github.com/repos/" + c.owner.trim() + "/" + c.repo.trim() + "/contents/" + c.path.trim() + "?t=" + Date.now();
+                const url = `https://api.github.com/repos/${c.owner.trim()}/${c.repo.trim()}/contents/${c.path.trim()}?nocache=${Date.now()}`;
                 
                 try {
                     const res = await fetch(url, {
@@ -88,12 +87,7 @@
                         }
                     });
                     
-                    if (res.status === 404) {
-                        setLogs([]);
-                        setFileSha(null);
-                        return { logs: [], sha: null };
-                    }
-                    
+                    if (res.status === 404) return { logs: [], sha: null };
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
                     const data = await res.json();
@@ -101,43 +95,23 @@
                     const currentLogs = Array.isArray(decoded) ? decoded : [];
                     
                     setLogs(currentLogs);
-                    setFileSha(data.sha);
-                    
                     return { logs: currentLogs, sha: data.sha };
                 } catch (err) {
-                    if (!silent) showMsg("同期エラー: " + err.message, true);
+                    if (!silent) showMsg("データの取得に失敗しました", true);
                     return null;
                 } finally {
                     if (!silent) setLoading(false);
                 }
             };
 
-            const testConnection = async () => {
-                setLoading(true);
-                try {
-                    const res = await fetch("https://api.github.com/zen", {
-                        headers: { "Authorization": getAuthHeader(config.token) }
-                    });
-                    if (res.ok) {
-                        const text = await res.text();
-                        showMsg("✅ 接続成功！格言: " + text);
-                    } else {
-                        throw new Error("HTTP " + res.status);
-                    }
-                } catch (e) {
-                    showMsg("❌ 接続失敗: " + e.message, true);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            // 実際の書き込み処理を行う関数
             const performWrite = async (logsToWrite, sha, attempt = 1) => {
-                const url = "https://api.github.com/repos/" + config.owner.trim() + "/" + config.repo.trim() + "/contents/" + config.path.trim();
+                const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${config.path.trim()}`;
                 const content = btoa(unescape(encodeURIComponent(JSON.stringify(logsToWrite, null, 2))));
                 
+                setRetryCount(attempt - 1);
+
                 const body = {
-                    message: `Infinity Sync v7.2 (Attempt ${attempt})`,
+                    message: `Nova Sync v7.3 (Attempt ${attempt})`,
                     content: content
                 };
                 if (sha) body.sha = sha;
@@ -155,31 +129,32 @@
                 if (res.ok) {
                     const data = await res.json();
                     return data.content.sha;
-                } else if ((res.status === 422 || res.status === 409) && attempt < 4) {
-                    // 競合エラー時は、指数バックオフで待機してからリトライ
-                    const delay = attempt * 500;
-                    console.log(`Conflict detected. Retrying after ${delay}ms...`);
-                    await new Promise(r => setTimeout(r, delay));
+                } else if ((res.status === 422 || res.status === 409) && attempt < 6) {
+                    // 競合エラー時は、GitHubの反映を待つために1秒待機
+                    showMsg(`同期ズレを修復中... (${attempt}/5)`, false);
+                    await new Promise(r => setTimeout(r, 1000));
                     
+                    // 最新のSHAを取得し直す
                     const fresh = await fetchLatestData(config, true);
-                    if (!fresh) throw new Error(`再試行用の指紋取得に失敗しました (Status: ${res.status})`);
+                    if (!fresh) throw new Error("通信環境が不安定なため、指紋の再取得に失敗しました。");
                     
+                    // もし取得したSHAが失敗した時と同じなら、さらにもう一回待機してリトライ
                     return await performWrite(logsToWrite, fresh.sha, attempt + 1);
                 } else {
-                    const errText = await res.text();
-                    throw new Error(`${res.status}: ${errText.slice(0, 50)}`);
+                    const errBody = await res.json().catch(() => ({}));
+                    throw new Error(res.status + (errBody.message ? ": " + errBody.message : ""));
                 }
             };
 
             const saveLog = async () => {
                 setLoading(true);
                 try {
-                    // 1. 保存直前に最新状態を取得
+                    // 1. 最新状態を確実に取得
                     const latest = await fetchLatestData(config, true);
                     const currentLogs = latest ? latest.logs : logs;
-                    const currentSha = latest ? latest.sha : fileSha;
+                    const currentSha = latest ? latest.sha : null;
 
-                    // 2. 新規レコード作成
+                    // 2. 新規レコード
                     const newLog = { 
                         id: Date.now(), 
                         machineName: selM, 
@@ -190,17 +165,17 @@
                     };
                     const updatedLogs = [newLog, ...currentLogs];
 
-                    // 3. 書き込み（自動リトライ付）
-                    const newSha = await performWrite(updatedLogs, currentSha);
+                    // 3. 執念の書き込み
+                    await performWrite(updatedLogs, currentSha);
                     
                     setLogs(updatedLogs);
-                    setFileSha(newSha);
                     showMsg("✅ 筋肉の記録を刻みました");
                     setView('history');
                 } catch (err) {
                     showMsg("保存エラー: " + err.message, true);
                 } finally {
                     setLoading(false);
+                    setRetryCount(0);
                 }
             };
 
@@ -218,7 +193,7 @@
                 
                 const success = await fetchLatestData(cleanedConfig, false);
                 if (success) {
-                    showMsg("設定を保存しました");
+                    showMsg("設定を保存し、最新データを同期しました");
                     setView('input');
                 }
             };
@@ -254,10 +229,10 @@
 
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-infinity text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-microchip text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v7.2 Infinity Sync</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v7.3 Nova Sync</p>
                             </div>
                         </div>
                         <button onClick={() => setView('settings')} className="text-slate-600 p-2"><i className="fas fa-cog text-xl"></i></button>
@@ -274,7 +249,7 @@
                     <main className="max-w-md mx-auto">
                         {view === 'settings' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in space-y-6">
-                                <h2 className="text-xl font-black flex items-center gap-2 text-blue-400"><i className="fas fa-wifi"></i> 同期エンジン v7.2</h2>
+                                <h2 className="text-xl font-black flex items-center gap-2 text-blue-400"><i className="fas fa-shield-virus"></i> 同期エンジン v7.3</h2>
                                 <form onSubmit={saveConfig} className="space-y-4">
                                     {['owner', 'repo', 'token'].map(f => (
                                         <div key={f}>
@@ -289,14 +264,18 @@
                                         </div>
                                     ))}
                                     <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-2 shadow-xl active:scale-[0.98] transition-all">
-                                        {loading ? 'SYNCING...' : '設定を保存して開始'}
+                                        {loading ? 'CONNECTING...' : '設定を保存して開始'}
                                     </button>
-                                    
-                                    <div className="pt-6 border-t border-slate-800 grid grid-cols-2 gap-3">
-                                        <button type="button" onClick={() => fetchLatestData(config)} className="py-3 bg-slate-800 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-xl border border-slate-700">最新を強制同期</button>
-                                        <button type="button" onClick={() => {if(confirm('設定をリロードしますか？')){localStorage.removeItem('lean_forge_config'); window.location.reload();}}} className="py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl border border-red-900/20">全初期化</button>
+                                    <div className="pt-6 border-t border-slate-800">
+                                        <button type="button" onClick={() => {if(confirm('設定をリロードしますか？')){localStorage.removeItem('lean_forge_config'); window.location.reload();}}} className="w-full py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl border border-red-900/20 font-black tracking-widest">全初期化リセット</button>
                                     </div>
                                 </form>
+                                <div className="p-4 bg-blue-900/10 rounded-2xl border border-blue-800/20">
+                                    <p className="text-[9px] text-blue-300 leading-relaxed font-bold">
+                                        <i className="fas fa-redo-alt mr-1"></i> Nova Sync テクノロジー：<br/>
+                                        GitHubの反映遅延を自動検知し、最新の指紋が降りてくるまで粘り強く再試行を繰り返します。
+                                    </p>
+                                </div>
                             </div>
                         )}
 
@@ -311,7 +290,9 @@
                                         </div>
                                     ))}
                                 </div>
-                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">{loading ? 'STABILIZING...' : 'RECORD & FORGE'}</button>
+                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">
+                                    {loading ? (retryCount > 0 ? `RETRYING ${retryCount}/5...` : 'RECOVERING SHA...') : 'RECORD & FORGE'}
+                                </button>
                             </div>
                         )}
 
