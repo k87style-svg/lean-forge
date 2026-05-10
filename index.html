@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | v9.0 Shell</title>
+    <title>LEAN FORGE | Setup-Free v10.0</title>
     
     <!-- ステータスボードと同じライブラリ構成 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -21,14 +21,7 @@
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body {
-            font-family: 'Inter', "Meiryo", sans-serif;
-            background-color: #020617;
-            color: #f8fafc;
-            margin: 0;
-            overflow-x: hidden;
-            -webkit-tap-highlight-color: transparent;
-        }
+        body { font-family: 'Inter', "Meiryo", sans-serif; background-color: #020617; color: #f8fafc; margin: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
         .active-tab { background-color: #2563eb; color: white; border-color: #3b82f6; }
         select, input { background-color: #0f172a !important; color: white !important; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -37,42 +30,26 @@
     </style>
 </head>
 <body>
-    <div id="root">
-        <!-- 起動前の表示 -->
-        <div class="flex flex-col items-center justify-center h-screen">
-            <div class="w-10 h-10 border-4 border-slate-800 border-b-blue-600 rounded-full animate-spin"></div>
-            <p class="mt-4 text-blue-500 font-black tracking-widest text-xs uppercase">Forging System...</p>
-        </div>
-    </div>
+    <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- 1. Firebase 初期化 (ステータスボード方式) ---
-        const firebaseConfig = typeof window.__firebase_config !== 'undefined' ? JSON.parse(window.__firebase_config) : {};
-        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'lean-forge-v9';
-
-        if (firebaseConfig.apiKey && !firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
-        const db = firebase.firestore();
-        const auth = firebase.auth();
-
-        // --- 2. 定数設定 ---
+        // --- 定数設定 ---
         const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
-        const ROUTINE = [
-            { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
-            { day: "Day B", title: "背中・腕裏 (Pull)", items: ["ラットマシン", "ローロー", "ローワーバック", "ロータリートルソー"] },
-            { day: "Day C", title: "足・腹筋 (Legs/Abs)", items: ["レッグプレス", "レッグエクステンション", "レッグカール", "トータルアブドミナル", "マルチヒップ", "アダクター", "アブダクター"] }
-        ];
         const START_DATE = new Date("2026-05-18");
         const END_DATE = new Date("2026-08-31");
 
-        // --- 3. メインコンポーネント ---
         function App() {
+            // 状態管理
+            const [config, setConfig] = useState(() => {
+                const saved = localStorage.getItem('lean_forge_fb_config');
+                return saved ? JSON.parse(saved) : null;
+            });
+            const [isInitialized, setIsInitialized] = useState(false);
             const [user, setUser] = useState(null);
             const [logs, setLogs] = useState([]);
-            const [view, setView] = useState('input'); // 'input', 'history', 'trends', 'guide'
+            const [view, setView] = useState('input');
             const [selM, setSelM] = useState(MACHINE_LIST[0]);
             const [weight, setWeight] = useState(20);
             const [reps, setReps] = useState(10);
@@ -85,25 +62,43 @@
                 setTimeout(() => setToast(null), 3000);
             };
 
-            // 認証初期化
+            // Firebaseの動的初期化
             useEffect(() => {
-                const init = async () => {
-                    try {
-                        if (window.__initial_auth_token) {
-                            await auth.signInWithCustomToken(window.__initial_auth_token);
-                        } else {
-                            await auth.signInAnonymously();
-                        }
-                    } catch (e) { console.error(e); }
-                };
-                init();
-                return auth.onAuthStateChanged(setUser);
-            }, []);
+                if (!config) return;
 
-            // データ同期
+                try {
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp(config);
+                    }
+                    const auth = firebase.auth();
+                    const db = firebase.firestore();
+                    
+                    const initAuth = async () => {
+                        try {
+                            await auth.signInAnonymously();
+                        } catch (e) { showToast("接続エラー: " + e.message, true); }
+                    };
+                    initAuth();
+
+                    const unsubscribeAuth = auth.onAuthStateChanged((u) => {
+                        setUser(u);
+                        setIsInitialized(true);
+                    });
+
+                    return () => unsubscribeAuth();
+                } catch (e) {
+                    showToast("初期化に失敗しました。設定を確認してください。", true);
+                    setConfig(null);
+                }
+            }, [config]);
+
+            // データ購読
             useEffect(() => {
-                if (!user) return;
+                if (!isInitialized || !user) return;
+                const db = firebase.firestore();
+                const appId = config.projectId || 'lean-forge';
                 const path = `artifacts/${appId}/public/data/training_logs`;
+                
                 const unsubscribe = db.collection(path).onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({
                         id: doc.id,
@@ -112,13 +107,33 @@
                     }));
                     setLogs(data.sort((a, b) => b.date - a.date));
                 }, err => showToast("同期エラー", true));
+                
                 return () => unsubscribe();
-            }, [user]);
+            }, [isInitialized, user]);
 
+            // 設定保存
+            const handleConfigSubmit = (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const newConfig = {
+                    apiKey: formData.get('apiKey'),
+                    authDomain: formData.get('authDomain'),
+                    projectId: formData.get('projectId'),
+                    storageBucket: formData.get('storageBucket'),
+                    messagingSenderId: formData.get('messagingSenderId'),
+                    appId: formData.get('appId')
+                };
+                localStorage.setItem('lean_forge_fb_config', JSON.stringify(newConfig));
+                setConfig(newConfig);
+            };
+
+            // 記録保存
             const handleSave = async () => {
                 if (!user) return;
                 setLoading(true);
                 try {
+                    const db = firebase.firestore();
+                    const appId = config.projectId || 'lean-forge';
                     const path = `artifacts/${appId}/public/data/training_logs`;
                     await db.collection(path).add({
                         machineName: selM,
@@ -138,9 +153,7 @@
             };
 
             const chartData = useMemo(() => {
-                const filtered = logs
-                    .filter(l => l.machineName === selM)
-                    .sort((a, b) => a.date - b.date);
+                const filtered = logs.filter(l => l.machineName === selM).sort((a, b) => a.date - b.date);
                 if (filtered.length === 0) return [];
                 const startW = Number(filtered[0].weight);
                 const targetW = startW * 1.2;
@@ -155,11 +168,40 @@
                 });
             }, [logs, selM]);
 
-            if (!user) return null;
+            // --- 画面描画: 設定入力 ---
+            if (!config) {
+                return (
+                    <div className="min-h-screen p-6 bg-slate-950 flex flex-col justify-center items-center">
+                        <div className="w-full max-w-md bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
+                            <h2 className="text-2xl font-black mb-6 text-blue-500 italic uppercase">Cloud Setup</h2>
+                            <p className="text-xs text-slate-500 mb-8 leading-relaxed font-bold uppercase tracking-widest">Firebaseの6項目を入力してください。設定はブラウザに保存されます。</p>
+                            <form onSubmit={handleConfigSubmit} className="space-y-4">
+                                {['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'].map(key => (
+                                    <div key={key}>
+                                        <label className="text-[9px] text-slate-500 uppercase font-black mb-1.5 block tracking-tighter">{key}</label>
+                                        <input name={key} type="text" required className="w-full p-3 bg-slate-800 rounded-xl border border-slate-700 text-sm outline-none font-mono" placeholder={`Enter ${key}...`} />
+                                    </div>
+                                ))}
+                                <button type="submit" className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/40 mt-6 active:scale-95 transition-all">Connect & Start</button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
 
+            // --- 画面描画: 接続待ち ---
+            if (!isInitialized) {
+                return (
+                    <div className="flex flex-col items-center justify-center h-screen bg-slate-950">
+                        <div className="w-10 h-10 border-4 border-slate-800 border-b-blue-600 rounded-full animate-spin"></div>
+                        <p className="mt-4 text-blue-500 font-black tracking-widest text-xs uppercase">Connecting Cloud...</p>
+                    </div>
+                );
+            }
+
+            // --- 画面描画: メインアプリ ---
             return (
-                <div className="min-h-screen pb-24 px-4 max-w-md mx-auto animate-in">
-                    {/* トースト */}
+                <div className="min-h-screen pb-24 px-4 max-w-md mx-auto animate-in bg-slate-950">
                     {toast && (
                         <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 ${toast.isError ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>
                             {toast.text}
@@ -168,24 +210,19 @@
 
                     <header className="py-8 flex justify-between items-center">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-sync text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-bolt text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-blue-400">v9.0 Shell Sync</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-blue-400">v10.0 Cloud Edition</p>
                             </div>
                         </div>
-                        <div className="text-right">
-                            <span className="text-[10px] text-green-500 font-black uppercase flex items-center gap-1.5 justify-end">
-                                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Online
-                            </span>
-                            <span className="text-[8px] text-slate-600 font-mono tracking-tighter uppercase leading-none">Cloud Secured</span>
-                        </div>
+                        <button onClick={() => { if(confirm('設定をリセットしますか？')) { localStorage.removeItem('lean_forge_fb_config'); window.location.reload(); } }} className="text-slate-700 hover:text-red-500 transition-colors">
+                            <i className="fas fa-cog"></i>
+                        </button>
                     </header>
 
                     <nav className="mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
-                        {[
-                            {id:'input', label:'記録'}, {id:'history', label:'履歴'}, {id:'trends', label:'推移'}, {id:'guide', label:'ガイド'}
-                        ].map(t => (
+                        {[{id:'input', label:'記録'}, {id:'history', label:'履歴'}, {id:'trends', label:'推移'}].map(t => (
                             <button key={t.id} onClick={() => setView(t.id)} className={"flex-1 py-3 px-1 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all " + (view === t.id ? 'active-tab shadow-lg shadow-blue-900/20' : 'text-slate-500')}>
                                 {t.label}
                             </button>
@@ -195,12 +232,9 @@
                     <main>
                         {view === 'input' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 shadow-2xl">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] text-slate-500 uppercase font-black ml-1 tracking-widest">Exercise</label>
-                                    <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none appearance-none">
-                                        {MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}
-                                    </select>
-                                </div>
+                                <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none appearance-none">
+                                    {MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
                                 <div className="grid grid-cols-3 gap-4">
                                     {[{l:'Kg', v:weight, s:setWeight}, {l:'Reps', v:reps, s:setReps}, {l:'Sets', v:sets, s:setSets}].map(f => (
                                         <div key={f.l} className="text-center">
@@ -210,14 +244,14 @@
                                     ))}
                                 </div>
                                 <button onClick={handleSave} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">
-                                    {loading ? 'FORGING...' : 'RECORD & FORGE'}
+                                    {loading ? 'SAVING...' : 'RECORD & FORGE'}
                                 </button>
                             </div>
                         )}
 
                         {view === 'history' && (
                             <div className="space-y-4">
-                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase">No logs detected</div> : logs.map(log => (
+                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest text-slate-500">No cloud records</div> : logs.map(log => (
                                     <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
                                         <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{log.date.toLocaleDateString()}</div></div>
                                         <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
@@ -242,19 +276,8 @@
                                                 <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                                             </Recharts.ComposedChart>
                                         </Recharts.ResponsiveContainer>
-                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need records for analysis.</p></div>}
+                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2 text-slate-800"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose text-slate-600">Need records for analysis.</p></div>}
                                 </div>
-                            </div>
-                        )}
-
-                        {view === 'guide' && (
-                            <div className="space-y-4">
-                                {ROUTINE.map(r => (
-                                    <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg">
-                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span><span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
-                                        <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[11px] px-3 py-2 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>)}</div>
-                                    </div>
-                                ))}
                             </div>
                         )}
                     </main>
