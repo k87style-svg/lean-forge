@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Pulse Sync v7.4</title>
+    <title>LEAN FORGE | Cloud Edition</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -18,13 +18,25 @@
         .active-tab { background-color: #2563eb; color: white; border-color: #3b82f6; }
         .animate-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 50; width: 85%; max-width: 350px; }
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 50; width: 90%; max-width: 400px; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <script type="text/babel">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // Firebase Configuration (Provided by environment)
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-v1';
+
         const { useState, useEffect, useMemo } = React;
 
         const START_DATE = new Date("2026-05-18");
@@ -38,172 +50,82 @@
         ];
 
         function App() {
-            const [config, setConfig] = useState(() => {
-                try {
-                    const saved = localStorage.getItem('lean_forge_config');
-                    return saved ? JSON.parse(saved) : { token: "", owner: "k87style-svg", repo: "LEAN-FORGE", path: "data/training_logs.json" };
-                } catch (e) {
-                    return { token: "", owner: "k87style-svg", repo: "LEAN-FORGE", path: "data/training_logs.json" };
-                }
-            });
+            const [user, setUser] = useState(null);
             const [logs, setLogs] = useState([]);
             const [selM, setSelM] = useState(MACHINE_LIST[0]);
             const [weight, setWeight] = useState(20);
             const [reps, setReps] = useState(10);
             const [sets, setSets] = useState(3);
-            const [view, setView] = useState(config.token ? 'input' : 'settings');
-            const [loading, setLoading] = useState(false);
-            const [syncStatus, setSyncStatus] = useState("");
+            const [view, setView] = useState('input');
+            const [loading, setLoading] = useState(true);
             const [message, setMessage] = useState(null);
 
             const showMsg = (txt, isError = false) => {
                 setMessage({ txt, isError });
-                setTimeout(() => setMessage(null), 5000);
+                setTimeout(() => setMessage(null), 3000);
             };
 
+            // 1. Auth Initialization
             useEffect(() => {
-                if (config.token && config.owner && config.repo) {
-                    fetchLatestData(config, true);
-                }
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        showMsg("認証エラーが発生しました", true);
+                    }
+                };
+                initAuth();
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    if (u) setLoading(false);
+                });
+                return () => unsubscribe();
             }, []);
 
-            const getAuthHeader = (token) => {
-                const clean = token.trim().replace(/^token\s+/i, '').replace(/^Bearer\s+/i, '');
-                return 'token ' + clean;
-            };
-
-            const fetchLatestData = async (c, silent = false) => {
-                if (!c.token || !c.owner || !c.repo) return null;
-                if (!silent) {
-                    setLoading(true);
-                    setSyncStatus("GETTING LATEST...");
-                }
+            // 2. Data Fetching (Real-time Sync)
+            useEffect(() => {
+                if (!user) return;
+                // 全デバイス共通で閲覧可能なパブリックパスを使用
+                const logsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'training_logs');
                 
-                const url = `https://api.github.com/repos/${c.owner.trim()}/${c.repo.trim()}/contents/${c.path.trim()}?nocache=${Date.now()}`;
-                
-                try {
-                    const res = await fetch(url, {
-                        headers: { 
-                            "Accept": "application/vnd.github+json",
-                            "Authorization": getAuthHeader(c.token),
-                            "Cache-Control": "no-cache, no-store, must-revalidate"
-                        }
-                    });
-                    
-                    if (res.status === 404) return { logs: [], sha: null };
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-                    const data = await res.json();
-                    const decoded = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g, '')))));
-                    const currentLogs = Array.isArray(decoded) ? decoded : [];
-                    
-                    setLogs(currentLogs);
-                    return { logs: currentLogs, sha: data.sha };
-                } catch (err) {
-                    console.error("Fetch error:", err);
-                    if (!silent) showMsg("データの取得に失敗しました", true);
-                    return null;
-                } finally {
-                    if (!silent) {
-                        setLoading(false);
-                        setSyncStatus("");
-                    }
-                }
-            };
-
-            const performWrite = async (logsToWrite, sha, attempt = 1) => {
-                const url = `https://api.github.com/repos/${config.owner.trim()}/${config.repo.trim()}/contents/${config.path.trim()}`;
-                const content = btoa(unescape(encodeURIComponent(JSON.stringify(logsToWrite, null, 2))));
-                
-                setSyncStatus(`SYNC ATTEMPT ${attempt}/5...`);
-
-                const body = {
-                    message: `Pulse Sync v7.4 (Attempt ${attempt})`,
-                    content: content
-                };
-                if (sha) body.sha = sha;
-
-                const res = await fetch(url, {
-                    method: 'PUT',
-                    headers: { 
-                        "Content-Type": "application/json",
-                        "Authorization": getAuthHeader(config.token),
-                        "Accept": "application/vnd.github+json"
-                    },
-                    body: JSON.stringify(body)
+                const unsubscribe = onSnapshot(logsCollection, (snapshot) => {
+                    const data = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data(),
+                        date: doc.data().date?.toDate().toISOString() || new Date().toISOString()
+                    }));
+                    // 日付順にソート
+                    setLogs(data.sort((a, b) => new Date(b.date) - new Date(a.date)));
+                }, (err) => {
+                    showMsg("データの読み込みに失敗しました", true);
                 });
 
-                if (res.ok) {
-                    const data = await res.json();
-                    return data.content.sha;
-                } else if ((res.status === 422 || res.status === 409) && attempt < 6) {
-                    // 競合発生時：待機時間を延ばしながらリトライ (1s, 2s, 3s...)
-                    const waitTime = attempt * 1000;
-                    setSyncStatus(`CONFLICT: WAITING ${attempt}s...`);
-                    await new Promise(r => setTimeout(r, waitTime));
-                    
-                    // 最新のSHAを取得し直す
-                    const fresh = await fetchLatestData(config, true);
-                    // freshがnullでも、ループを回して次のattemptで再試行させる
-                    const nextSha = fresh ? fresh.sha : sha; 
-                    
-                    return await performWrite(logsToWrite, nextSha, attempt + 1);
-                } else {
-                    const errBody = await res.json().catch(() => ({}));
-                    throw new Error(`${res.status}: ${errBody.message || "Unknown error"}`);
-                }
-            };
+                return () => unsubscribe();
+            }, [user]);
 
             const saveLog = async () => {
+                if (!user) return;
                 setLoading(true);
                 try {
-                    // 1. 最新状態を取得
-                    setSyncStatus("CHECKING PULSE...");
-                    const latest = await fetchLatestData(config, true);
-                    const currentLogs = latest ? latest.logs : logs;
-                    const currentSha = latest ? latest.sha : null;
-
-                    // 2. 新規レコード
-                    const newLog = { 
-                        id: Date.now(), 
-                        machineName: selM, 
-                        weight: Number(weight), 
-                        reps: Number(reps), 
-                        sets: Number(sets), 
-                        date: new Date().toISOString() 
-                    };
-                    const updatedLogs = [newLog, ...currentLogs];
-
-                    // 3. 粘り強い書き込み
-                    await performWrite(updatedLogs, currentSha);
-                    
-                    setLogs(updatedLogs);
-                    showMsg("✅ 筋肉の記録を刻みました");
+                    const logsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'training_logs');
+                    await addDoc(logsCollection, {
+                        machineName: selM,
+                        weight: Number(weight),
+                        reps: Number(reps),
+                        sets: Number(sets),
+                        date: Timestamp.now(),
+                        userId: user.uid
+                    });
+                    showMsg("✅ クラウドに記録を保存しました");
                     setView('history');
-                } catch (err) {
-                    showMsg("保存失敗: " + err.message, true);
+                } catch (error) {
+                    showMsg("保存に失敗しました: " + error.message, true);
                 } finally {
                     setLoading(false);
-                    setSyncStatus("");
-                }
-            };
-
-            const saveConfig = async (e) => {
-                e.preventDefault();
-                const cleanedConfig = {
-                    ...config,
-                    token: config.token.trim(),
-                    owner: config.owner.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, ''),
-                    repo: config.repo.trim().replace(/^https?:\/\/github\.com\/.*?\//, '').replace(/\/$/, '')
-                };
-                
-                localStorage.setItem('lean_forge_config', JSON.stringify(cleanedConfig));
-                setConfig(cleanedConfig);
-                
-                const success = await fetchLatestData(cleanedConfig, false);
-                if (success) {
-                    showMsg("設定を保存し、最新データを同期しました");
-                    setView('input');
                 }
             };
 
@@ -227,6 +149,15 @@
                 });
             }, [logs, selM]);
 
+            if (loading && !user) {
+                return (
+                    <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-blue-500">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+                        <p className="font-bold tracking-widest text-xs uppercase">Connecting to Cloud...</p>
+                    </div>
+                );
+            }
+
             return (
                 <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 overflow-x-hidden">
                     {message && (
@@ -238,56 +169,25 @@
 
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-wave-square text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-cloud text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v7.4 Pulse Sync</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Firebase Cloud Edition</p>
                             </div>
                         </div>
-                        <button onClick={() => setView('settings')} className="text-slate-600 p-2"><i className="fas fa-cog text-xl"></i></button>
+                        <div className="flex flex-col items-end">
+                            <span className="text-[8px] text-slate-600 font-mono leading-none">SYNC STATUS</span>
+                            <span className="text-[10px] text-green-500 font-bold">ONLINE</span>
+                        </div>
                     </header>
 
-                    {view !== 'settings' && (
-                        <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
-                            {['input', 'history', 'trends', 'guide'].map(t => (
-                                <button key={t} onClick={() => setView(t)} className={"flex-1 py-3 px-1 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all " + (view === t ? 'active-tab shadow-lg' : 'text-slate-500')}>{t}</button>
-                            ))}
-                        </nav>
-                    )}
+                    <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
+                        {['input', 'history', 'trends', 'guide'].map(t => (
+                            <button key={t} onClick={() => setView(t)} className={"flex-1 py-3 px-1 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all " + (view === t ? 'active-tab shadow-lg' : 'text-slate-500')}>{t}</button>
+                        ))}
+                    </nav>
 
                     <main className="max-w-md mx-auto">
-                        {view === 'settings' && (
-                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in space-y-6">
-                                <h2 className="text-xl font-black flex items-center gap-2 text-blue-400"><i className="fas fa-heartbeat"></i> 同期エンジン v7.4</h2>
-                                <form onSubmit={saveConfig} className="space-y-4">
-                                    {['owner', 'repo', 'token'].map(f => (
-                                        <div key={f}>
-                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest ml-1">GitHub {f}</label>
-                                            <input 
-                                                type={f === 'token' ? 'password' : 'text'} 
-                                                value={config[f]} 
-                                                onChange={e => setConfig({...config, [f]: e.target.value})} 
-                                                className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-sm font-bold" 
-                                                required 
-                                            />
-                                        </div>
-                                    ))}
-                                    <button type="submit" disabled={loading} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-white uppercase mt-2 shadow-xl active:scale-[0.98] transition-all">
-                                        {loading ? 'CONNECTING...' : '設定を保存して開始'}
-                                    </button>
-                                    <div className="pt-6 border-t border-slate-800">
-                                        <button type="button" onClick={() => {if(confirm('設定をリセットしますか？')){localStorage.removeItem('lean_forge_config'); window.location.reload();}}} className="w-full py-3 bg-red-950/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-xl border border-red-900/20 font-black tracking-widest">全初期化リセット</button>
-                                    </div>
-                                </form>
-                                <div className="p-4 bg-blue-900/10 rounded-2xl border border-blue-800/20">
-                                    <p className="text-[9px] text-blue-300 leading-relaxed font-bold">
-                                        <i className="fas fa-sync-alt mr-1"></i> Pulse Sync テクノロジー：<br/>
-                                        不規則な通信ラグを自動計算し、GitHubの「呼吸」に合わせて確実にデータを刻み込みます。
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
                         {view === 'input' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 animate-in">
                                 <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
@@ -300,14 +200,16 @@
                                     ))}
                                 </div>
                                 <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">
-                                    {loading ? (syncStatus || 'FORGING...') : 'RECORD & FORGE'}
+                                    {loading ? 'SYNCING...' : 'RECORD & FORGE'}
                                 </button>
                             </div>
                         )}
 
                         {view === 'history' && (
                             <div className="space-y-4 animate-in">
-                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest">No logs in cloud</div> : logs.map(log => (
+                                {logs.length === 0 ? (
+                                    <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest">No cloud logs found</div>
+                                ) : logs.map(log => (
                                     <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
                                         <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{new Date(log.date).toLocaleDateString()}</div></div>
                                         <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
@@ -339,7 +241,7 @@
                             <div className="space-y-4 animate-in">
                                 {ROUTINE.map(r => (
                                     <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg">
-                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span><span className="text-xs font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
+                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span><span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
                                         <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[11px] px-3 py-2 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>)}</div>
                                     </div>
                                 ))}
@@ -350,8 +252,10 @@
                 </div>
             );
         }
+        
+        // Render with React 18
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(React.createElement(App));
     </script>
 </body>
 </html>
