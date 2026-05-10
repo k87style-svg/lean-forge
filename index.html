@@ -3,115 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Cloud Edition v8.1</title>
+    <title>LEAN FORGE | v9.0 Shell</title>
     
-    <!-- 基本ライブラリ -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- ステータスボードと同じライブラリ構成 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
     
-    <!-- Firebase 安定版 (Compat) -->
+    <!-- Firebase SDK (Compat版) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; margin: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: 'Inter', "Meiryo", sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            margin: 0;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
         .active-tab { background-color: #2563eb; color: white; border-color: #3b82f6; }
         select, input { background-color: #0f172a !important; color: white !important; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .view-section { display: none; }
-        .view-section.active { display: block; animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 100; display: none; }
+        .animate-in { animation: fadeIn 0.3s ease-out forwards; }
     </style>
 </head>
 <body>
-    <div id="app" class="min-h-screen pb-24 px-4">
-        <!-- Toast Notification -->
-        <div id="toast" class="toast p-4 rounded-2xl shadow-2xl border text-xs font-bold items-center gap-3 bg-blue-900 border-blue-500 text-white">
-            <span id="toast-text"></span>
+    <div id="root">
+        <!-- 起動前の表示 -->
+        <div class="flex flex-col items-center justify-center h-screen">
+            <div class="w-10 h-10 border-4 border-slate-800 border-b-blue-600 rounded-full animate-spin"></div>
+            <p class="mt-4 text-blue-500 font-black tracking-widest text-xs uppercase">Forging System...</p>
         </div>
-
-        <header class="py-8 flex justify-between items-center max-w-md mx-auto">
-            <div class="flex items-center gap-3">
-                <div class="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i class="fas fa-bolt text-xl"></i></div>
-                <div>
-                    <h1 class="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-blue-400">Cloud v8.1 Stability</p>
-                </div>
-            </div>
-            <div class="text-right">
-                <span id="sync-status" class="text-[10px] text-slate-600 font-black uppercase">Initializing...</span>
-            </div>
-        </header>
-
-        <nav id="main-nav" class="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl">
-            <button onclick="showView('input')" class="nav-btn flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest active-tab" data-view="input">記録</button>
-            <button onclick="showView('history')" class="nav-btn flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-500" data-view="history">履歴</button>
-            <button onclick="showView('trends')" class="nav-btn flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-500" data-view="trends">推移</button>
-            <button onclick="showView('guide')" class="nav-btn flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-500" data-view="guide">ガイド</button>
-        </nav>
-
-        <main class="max-w-md mx-auto">
-            <!-- VIEW: INPUT -->
-            <section id="view-input" class="view-section active">
-                <div class="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 shadow-2xl">
-                    <div class="space-y-2">
-                        <label class="text-[10px] text-slate-500 uppercase font-black ml-1 tracking-widest">Exercise Selection</label>
-                        <select id="machine-select" class="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none"></select>
-                    </div>
-                    <div class="grid grid-cols-3 gap-4 text-center">
-                        <div>
-                            <label class="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Weight</label>
-                            <input id="input-weight" type="number" step="0.5" value="20" class="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-lg border border-slate-700 outline-none text-white" />
-                            <span class="text-[8px] text-slate-600 font-black mt-1 block uppercase tracking-widest">kg</span>
-                        </div>
-                        <div>
-                            <label class="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Reps</label>
-                            <input id="input-reps" type="number" value="10" class="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-lg border border-slate-700 outline-none text-white" />
-                            <span class="text-[8px] text-slate-600 font-black mt-1 block uppercase tracking-widest">reps</span>
-                        </div>
-                        <div>
-                            <label class="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">Sets</label>
-                            <input id="input-sets" type="number" value="3" class="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-lg border border-slate-700 outline-none text-white" />
-                            <span class="text-[8px] text-slate-600 font-black mt-1 block uppercase tracking-widest">sets</span>
-                        </div>
-                    </div>
-                    <button id="save-btn" onclick="saveData()" class="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">RECORD & FORGE</button>
-                </div>
-            </section>
-
-            <!-- VIEW: HISTORY -->
-            <section id="view-history" class="view-section">
-                <div id="history-list" class="space-y-4"></div>
-            </section>
-
-            <!-- VIEW: TRENDS -->
-            <section id="view-trends" class="view-section">
-                <div class="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl space-y-6">
-                    <h2 class="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1 text-blue-400">Growth Path</h2>
-                    <select id="trend-machine-select" onchange="renderChart()" class="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 font-black text-white outline-none"></select>
-                    <div id="chart-container" class="h-72 w-full -ml-4">
-                        <p class="text-center text-slate-600 text-[10px] pt-24 uppercase font-black tracking-widest">Analyzing records...</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- VIEW: GUIDE -->
-            <section id="view-guide" class="view-section">
-                <div id="guide-list" class="space-y-4"></div>
-            </section>
-        </main>
-        
-        <footer class="text-center py-12 opacity-20"><p class="text-[8px] font-black tracking-[0.5em] uppercase italic">Strong Mind, Strong Body</p></footer>
     </div>
 
-    <script>
-        // --- 基本設定 ---
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- 1. Firebase 初期化 (ステータスボード方式) ---
+        const firebaseConfig = typeof window.__firebase_config !== 'undefined' ? JSON.parse(window.__firebase_config) : {};
+        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'lean-forge-v9';
+
+        if (firebaseConfig.apiKey && !firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // --- 2. 定数設定 ---
         const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
         const ROUTINE = [
             { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
@@ -121,250 +68,203 @@
         const START_DATE = new Date("2026-05-18");
         const END_DATE = new Date("2026-08-31");
 
-        let db, auth, appId, userId;
-        let trainingLogs = [];
+        // --- 3. メインコンポーネント ---
+        function App() {
+            const [user, setUser] = useState(null);
+            const [logs, setLogs] = useState([]);
+            const [view, setView] = useState('input'); // 'input', 'history', 'trends', 'guide'
+            const [selM, setSelM] = useState(MACHINE_LIST[0]);
+            const [weight, setWeight] = useState(20);
+            const [reps, setReps] = useState(10);
+            const [sets, setSets] = useState(3);
+            const [loading, setLoading] = useState(false);
+            const [toast, setToast] = useState(null);
 
-        // --- 通知機能 ---
-        function showToast(text, isError = false) {
-            const toast = document.getElementById('toast');
-            const toastText = document.getElementById('toast-text');
-            toast.style.display = 'flex';
-            toast.className = `toast p-4 rounded-2xl shadow-2xl border text-xs font-bold items-center gap-3 active ${isError ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`;
-            toastText.innerText = text;
-            if (!isError) setTimeout(() => { toast.style.display = 'none'; }, 3000);
-        }
+            const showToast = (text, isError = false) => {
+                setToast({ text, isError });
+                setTimeout(() => setToast(null), 3000);
+            };
 
-        // --- Firebase 初期化 (堅牢化版) ---
-        async function initSystem() {
-            try {
-                if (typeof __firebase_config === 'undefined') {
-                    throw new Error("Firebase Config is missing from environment.");
-                }
+            // 認証初期化
+            useEffect(() => {
+                const init = async () => {
+                    try {
+                        if (window.__initial_auth_token) {
+                            await auth.signInWithCustomToken(window.__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    } catch (e) { console.error(e); }
+                };
+                init();
+                return auth.onAuthStateChanged(setUser);
+            }, []);
 
-                const config = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
-                
-                if (!window.firebase) {
-                    throw new Error("Firebase SDK not loaded properly.");
-                }
-
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(config);
-                }
-                
-                db = firebase.firestore();
-                auth = firebase.auth();
-                appId = typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-v1';
-
-                // 認証実行
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await auth.signInWithCustomToken(__initial_auth_token);
-                } else {
-                    await auth.signInAnonymously();
-                }
-
-                auth.onAuthStateChanged(user => {
-                    if (user) {
-                        userId = user.uid;
-                        const status = document.getElementById('sync-status');
-                        status.innerText = 'Online';
-                        status.className = 'text-[10px] text-green-500 font-black uppercase';
-                        listenToData();
-                    }
-                });
-
-                // UI要素の生成
-                setupUI();
-
-            } catch (e) {
-                console.error(e);
-                showToast("起動エラー: " + e.message, true);
-            }
-        }
-
-        function setupUI() {
-            // マシン選択リスト
-            ['machine-select', 'trend-machine-select'].forEach(id => {
-                const el = document.getElementById(id);
-                if (!el) return;
-                el.innerHTML = "";
-                MACHINE_LIST.forEach(m => {
-                    const opt = document.createElement('option');
-                    opt.value = m; opt.innerText = m;
-                    el.appendChild(opt);
-                });
-            });
-
-            // ガイドリスト
-            const guideList = document.getElementById('guide-list');
-            guideList.innerHTML = "";
-            ROUTINE.forEach(r => {
-                const div = document.createElement('div');
-                div.className = "bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg";
-                div.innerHTML = `
-                    <div class="flex justify-between items-center mb-4">
-                        <span class="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">${r.day} Protocol</span>
-                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tight">${r.title}</span>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        ${r.items.map(i => `<span class="bg-slate-800 text-[11px] px-3 py-2 rounded-xl border border-slate-700 font-bold text-slate-300">${i}</span>`).join('')}
-                    </div>
-                `;
-                guideList.appendChild(div);
-            });
-        }
-
-        // --- データ購読 ---
-        function listenToData() {
-            try {
-                const logsCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('training_logs');
-                logsCollection.onSnapshot(snapshot => {
-                    trainingLogs = snapshot.docs.map(doc => ({
+            // データ同期
+            useEffect(() => {
+                if (!user) return;
+                const path = `artifacts/${appId}/public/data/training_logs`;
+                const unsubscribe = db.collection(path).onSnapshot(snapshot => {
+                    const data = snapshot.docs.map(doc => ({
                         id: doc.id,
                         ...doc.data(),
                         date: doc.data().date?.toDate() || new Date()
-                    })).sort((a, b) => b.date - a.date);
-                    
-                    renderHistory();
-                    if (document.getElementById('view-trends').classList.contains('active')) renderChart();
-                }, err => {
-                    showToast("同期エラー: " + err.message, true);
-                });
-            } catch (e) {
-                showToast("データ接続失敗: " + e.message, true);
-            }
-        }
+                    }));
+                    setLogs(data.sort((a, b) => b.date - a.date));
+                }, err => showToast("同期エラー", true));
+                return () => unsubscribe();
+            }, [user]);
 
-        // --- データ保存 ---
-        async function saveData() {
-            if (!userId) {
-                showToast("接続待ちです。再度お試しください。", true);
-                return;
-            }
-            const btn = document.getElementById('save-btn');
-            btn.disabled = true;
-            btn.innerText = "FORGING...";
-
-            const data = {
-                machineName: document.getElementById('machine-select').value,
-                weight: Number(document.getElementById('input-weight').value),
-                reps: Number(document.getElementById('input-reps').value),
-                sets: Number(document.getElementById('input-sets').value),
-                date: firebase.firestore.Timestamp.now(),
-                userId: userId
+            const handleSave = async () => {
+                if (!user) return;
+                setLoading(true);
+                try {
+                    const path = `artifacts/${appId}/public/data/training_logs`;
+                    await db.collection(path).add({
+                        machineName: selM,
+                        weight: Number(weight),
+                        reps: Number(reps),
+                        sets: Number(sets),
+                        date: firebase.firestore.Timestamp.now(),
+                        userId: user.uid
+                    });
+                    showToast("✅ 保存完了");
+                    setView('history');
+                } catch (e) {
+                    showToast("保存失敗", true);
+                } finally {
+                    setLoading(false);
+                }
             };
 
-            try {
-                const logsCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('training_logs');
-                await logsCollection.add(data);
-                showToast("✅ クラウドに記録を刻みました");
-                showView('history');
-            } catch (e) {
-                showToast("保存失敗: " + e.message, true);
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "RECORD & FORGE";
-            }
-        }
+            const chartData = useMemo(() => {
+                const filtered = logs
+                    .filter(l => l.machineName === selM)
+                    .sort((a, b) => a.date - b.date);
+                if (filtered.length === 0) return [];
+                const startW = Number(filtered[0].weight);
+                const targetW = startW * 1.2;
+                const totalD = (END_DATE - START_DATE) / 86400000;
+                return filtered.map(l => {
+                    const d = (new Date(l.date) - START_DATE) / 86400000;
+                    return { 
+                        date: l.date.toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), 
+                        real: Number(l.weight), 
+                        ideal: Math.round((startW + (targetW - startW) * (Math.max(0, d) / totalD)) * 10) / 10 
+                    };
+                });
+            }, [logs, selM]);
 
-        // --- 画面表示制御 ---
-        function showView(viewId) {
-            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-            document.getElementById('view-' + viewId).classList.add('active');
-            
-            document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.classList.remove('active-tab', 'text-white', 'shadow-lg');
-                btn.classList.add('text-slate-500');
-                if(btn.dataset.view === viewId) {
-                    btn.classList.add('active-tab', 'text-white', 'shadow-lg');
-                    btn.classList.remove('text-slate-500');
-                }
-            });
+            if (!user) return null;
 
-            if (viewId === 'trends') renderChart();
-        }
-
-        // --- 履歴描画 ---
-        function renderHistory() {
-            const list = document.getElementById('history-list');
-            list.innerHTML = "";
-            if (trainingLogs.length === 0) {
-                list.innerHTML = `<div class="text-center py-24 opacity-20 font-black text-[10px] uppercase tracking-widest">No cloud logs detected</div>`;
-                return;
-            }
-            trainingLogs.forEach(log => {
-                const div = document.createElement('div');
-                div.className = "bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl mb-4";
-                div.innerHTML = `
-                    <div>
-                        <div class="font-black text-slate-200 text-[14px]">${log.machineName}</div>
-                        <div class="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">${log.date.toLocaleDateString()}</div>
-                    </div>
-                    <div class="text-right">
-                        <div class="flex items-baseline justify-end">
-                            <span class="text-2xl font-black text-blue-500 tracking-tighter">${log.weight}</span>
-                            <span class="text-[10px] text-slate-500 ml-1 uppercase">kg</span>
+            return (
+                <div className="min-h-screen pb-24 px-4 max-w-md mx-auto animate-in">
+                    {/* トースト */}
+                    {toast && (
+                        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 ${toast.isError ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>
+                            {toast.text}
                         </div>
-                        <div class="text-[11px] font-black text-slate-400 italic opacity-80">${log.reps}R × ${log.sets}S</div>
-                    </div>
-                `;
-                list.appendChild(div);
-            });
-        }
+                    )}
 
-        // --- グラフ描画 ---
-        function renderChart() {
-            const container = document.getElementById('chart-container');
-            const machine = document.getElementById('trend-machine-select').value;
-            const filtered = trainingLogs
-                .filter(l => l.machineName === machine)
-                .sort((a, b) => a.date - b.date);
+                    <header className="py-8 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-sync text-xl"></i></div>
+                            <div>
+                                <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-blue-400">v9.0 Shell Sync</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <span className="text-[10px] text-green-500 font-black uppercase flex items-center gap-1.5 justify-end">
+                                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Online
+                            </span>
+                            <span className="text-[8px] text-slate-600 font-mono tracking-tighter uppercase leading-none">Cloud Secured</span>
+                        </div>
+                    </header>
 
-            if (filtered.length === 0) {
-                container.innerHTML = `<p class="text-center text-slate-600 text-[10px] pt-24 uppercase font-black tracking-widest">Need records for analysis.</p>`;
-                return;
-            }
+                    <nav className="mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
+                        {[
+                            {id:'input', label:'記録'}, {id:'history', label:'履歴'}, {id:'trends', label:'推移'}, {id:'guide', label:'ガイド'}
+                        ].map(t => (
+                            <button key={t.id} onClick={() => setView(t.id)} className={"flex-1 py-3 px-1 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all " + (view === t.id ? 'active-tab shadow-lg shadow-blue-900/20' : 'text-slate-500')}>
+                                {t.label}
+                            </button>
+                        ))}
+                    </nav>
 
-            container.innerHTML = "";
-            const startW = Number(filtered[0].weight);
-            const targetW = startW * 1.2;
-            const totalD = (END_DATE - START_DATE) / 86400000;
+                    <main>
+                        {view === 'input' && (
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 shadow-2xl">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] text-slate-500 uppercase font-black ml-1 tracking-widest">Exercise</label>
+                                    <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none appearance-none">
+                                        {MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4">
+                                    {[{l:'Kg', v:weight, s:setWeight}, {l:'Reps', v:reps, s:setReps}, {l:'Sets', v:sets, s:setSets}].map(f => (
+                                        <div key={f.l} className="text-center">
+                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block tracking-widest">{f.l}</label>
+                                            <input type="number" step="0.5" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-lg border border-slate-700 outline-none" />
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={handleSave} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">
+                                    {loading ? 'FORGING...' : 'RECORD & FORGE'}
+                                </button>
+                            </div>
+                        )}
 
-            const chartData = filtered.map(l => {
-                const d = (new Date(l.date) - START_DATE) / 86400000;
-                return {
-                    date: l.date.toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}),
-                    real: Number(l.weight),
-                    ideal: Math.round((startW + (targetW - startW) * (Math.max(0, d) / totalD)) * 10) / 10
-                };
-            });
+                        {view === 'history' && (
+                            <div className="space-y-4">
+                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase">No logs detected</div> : logs.map(log => (
+                                    <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
+                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{log.date.toLocaleDateString()}</div></div>
+                                        <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
 
-            const { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } = window.Recharts;
-            
-            const chartElement = React.createElement(ResponsiveContainer, { width: "100%", height: "100%" },
-                React.createElement(ComposedChart, { data: chartData },
-                    React.createElement('defs', null, 
-                        React.createElement('linearGradient', { id: 'rG', x1: '0', y1: '0', x2: '0', y2: '1' },
-                            React.createElement('stop', { offset: '5%', stopColor: '#3b82f6', stopOpacity: 0.4 }),
-                            React.createElement('stop', { offset: '95%', stopColor: '#3b82f6', stopOpacity: 0 })
-                        )
-                    ),
-                    React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false, stroke: "#1e293b" }),
-                    React.createElement(XAxis, { dataKey: "date", fontSize: 10, tick: {fill:'#64748b'}, axisLine: false, tickLine: false }),
-                    React.createElement(YAxis, { fontSize: 10, tick: {fill:'#64748b'}, domain: ['auto', 'auto'], axisLine: false, tickLine: false }),
-                    React.createElement(Area, { type: "monotone", dataKey: "real", stroke: "#3b82f6", fill: "url(#rG)", strokeWidth: 4, dot: {r: 4, fill: '#3b82f6'} }),
-                    React.createElement(Line, { type: "monotone", dataKey: "ideal", stroke: "#475569", strokeWidth: 2, strokeDasharray: "5 5", dot: false })
-                )
+                        {view === 'trends' && (
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl space-y-6">
+                                <h2 className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1 text-blue-400">Growth Path</h2>
+                                <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 font-black text-white outline-none">
+                                    {MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <div className="h-72 -ml-4">
+                                    {chartData.length >= 1 ? (
+                                        <Recharts.ResponsiveContainer width="100%" height="100%">
+                                            <Recharts.ComposedChart data={chartData}>
+                                                <defs><linearGradient id="rG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                                                <Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" /><Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} /><Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
+                                                <Recharts.Area type="monotone" dataKey="real" stroke="#3b82f6" fill="url(#rG)" strokeWidth={4} dot={{r: 4, fill: '#3b82f6'}} />
+                                                <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                                            </Recharts.ComposedChart>
+                                        </Recharts.ResponsiveContainer>
+                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need records for analysis.</p></div>}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'guide' && (
+                            <div className="space-y-4">
+                                {ROUTINE.map(r => (
+                                    <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg">
+                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span><span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
+                                        <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[11px] px-3 py-2 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>)}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </main>
+                    <footer className="text-center py-12 opacity-20"><p className="text-[8px] font-black tracking-[0.5em] uppercase italic text-slate-500">Strong Mind, Strong Body</p></footer>
+                </div>
             );
-
-            const chartDiv = document.createElement('div');
-            chartDiv.style.width = "100%"; chartDiv.style.height = "100%";
-            container.appendChild(chartDiv);
-            const root = ReactDOM.createRoot(chartDiv);
-            root.render(chartElement);
         }
 
-        // 起動
-        window.onload = initSystem;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
