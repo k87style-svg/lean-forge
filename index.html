@@ -3,274 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Cloud Edition v7.6</title>
+    <title>LEAN FORGE | Cloud Edition v7.7</title>
+    <!-- 必要なライブラリの読み込み -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    
+    <!-- Firebase (Compat版) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; margin: 0; overflow-x: hidden; }
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; margin: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
         .active-tab { background-color: #2563eb; color: white; border-color: #3b82f6; }
         .animate-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        #fallback-ui { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px; }
+        select, input { background-color: #0f172a !important; color: white !important; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body>
     <div id="root">
-        <!-- JSが動かない場合やエラー時に表示されるフォールバック -->
-        <div id="fallback-ui">
+        <!-- 起動前に表示される画面 -->
+        <div class="flex flex-col items-center justify-center h-screen bg-slate-950">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
-            <p class="text-blue-400 font-black tracking-widest text-sm uppercase">Loading Engine...</p>
-            <p id="error-console" class="text-red-500 text-xs mt-8 font-mono max-w-xs break-all"></p>
+            <p class="text-blue-400 font-black tracking-widest text-sm uppercase animate-pulse">Igniting Engine...</p>
         </div>
     </div>
 
-    <!-- Firebase SDKs & App Logic -->
-    <script type="module">
-        // ログ出力用
-        const errConsole = document.getElementById('error-console');
-        const logError = (msg) => {
-            console.error(msg);
-            if (errConsole) errConsole.innerText = "Error: " + msg;
-        };
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
 
-        try {
-            // Firebaseモジュールのインポート
-            import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-            import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-            import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // --- Firebase 初期化設定 ---
+        const firebaseConfig = JSON.parse(__firebase_config);
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-cloud';
 
-            // 環境変数の読み込み
-            if (typeof __firebase_config === 'undefined') {
-                throw new Error("Firebase設定が見つかりません。環境を確認してください。");
-            }
-            const firebaseConfig = JSON.parse(__firebase_config);
-            const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-            const db = getFirestore(app);
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-v1';
+        // --- 定数 ---
+        const START_DATE = new Date("2026-05-18");
+        const END_DATE = new Date("2026-08-31");
+        const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
+        
+        const ROUTINE = [
+            { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
+            { day: "Day B", title: "背中・腕裏 (Pull)", items: ["ラットマシン", "ローロー", "ローワーバック", "ロータリートルソー"] },
+            { day: "Day C", title: "足・腹筋 (Legs/Abs)", items: ["レッグプレス", "レッグエクステンション", "レッグカール", "トータルアブドミナル", "マルチヒップ", "アダクター", "アブダクター"] }
+        ];
 
-            const { useState, useEffect, useMemo } = window.React;
+        function App() {
+            const [user, setUser] = useState(null);
+            const [logs, setLogs] = useState([]);
+            const [selM, setSelM] = useState(MACHINE_LIST[0]);
+            const [weight, setWeight] = useState(20);
+            const [reps, setReps] = useState(10);
+            const [sets, setSets] = useState(3);
+            const [view, setView] = useState('input');
+            const [loading, setLoading] = useState(true);
+            const [message, setMessage] = useState(null);
 
-            // 定数定義
-            const START_DATE = new Date("2026-05-18");
-            const END_DATE = new Date("2026-08-31");
-            const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
-            
-            const ROUTINE = [
-                { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
-                { day: "Day B", title: "背中・腕裏 (Pull)", items: ["ラットマシン", "ローロー", "ローワーバック", "ロータリートルソー"] },
-                { day: "Day C", title: "足・腹筋 (Legs/Abs)", items: ["レッグプレス", "レッグエクステンション", "レッグカール", "トータルアブドミナル", "マルチヒップ", "アダクター", "アブダクター"] }
-            ];
+            const showMsg = (txt, isError = false) => {
+                setMessage({ txt, isError });
+                setTimeout(() => setMessage(null), 3000);
+            };
 
-            function App() {
-                const [user, setUser] = useState(null);
-                const [logs, setLogs] = useState([]);
-                const [selM, setSelM] = useState(MACHINE_LIST[0]);
-                const [weight, setWeight] = useState(20);
-                const [reps, setReps] = useState(10);
-                const [sets, setSets] = useState(3);
-                const [view, setView] = useState('input');
-                const [loading, setLoading] = useState(true);
-                const [message, setMessage] = useState(null);
-
-                const showMsg = (txt, isError = false) => {
-                    setMessage({ txt, isError });
-                    setTimeout(() => setMessage(null), 3000);
-                };
-
-                // 1. 認証の初期化
-                useEffect(() => {
-                    const initAuth = async () => {
-                        try {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        } catch (error) {
-                            logError("Auth: " + error.message);
-                            showMsg("認証エラーが発生しました", true);
-                        }
-                    };
-                    initAuth();
-                    const unsubscribe = onAuthStateChanged(auth, (u) => {
-                        setUser(u);
-                        if (u) setLoading(false);
-                    });
-                    return () => unsubscribe();
-                }, []);
-
-                // 2. リアルタイムデータ同期
-                useEffect(() => {
-                    if (!user) return;
-                    const logsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'training_logs');
-                    
-                    const unsubscribe = onSnapshot(logsCollection, (snapshot) => {
-                        const data = snapshot.docs.map(doc => ({
-                            id: doc.id,
-                            ...doc.data(),
-                            date: doc.data().date?.toDate().toISOString() || new Date().toISOString()
-                        }));
-                        setLogs(data.sort((a, b) => new Date(b.date) - new Date(a.date)));
-                    }, (err) => {
-                        logError("Firestore: " + err.message);
-                    });
-
-                    return () => unsubscribe();
-                }, [user]);
-
-                const saveLog = async () => {
-                    if (!user) return;
-                    setLoading(true);
+            // 1. 匿名認証 (社用車予約ツールと同じ方式)
+            useEffect(() => {
+                const initAuth = async () => {
                     try {
-                        const logsCollection = collection(db, 'artifacts', appId, 'public', 'data', 'training_logs');
-                        await addDoc(logsCollection, {
-                            machineName: selM,
-                            weight: Number(weight),
-                            reps: Number(reps),
-                            sets: Number(sets),
-                            date: Timestamp.now(),
-                            userId: user.uid
-                        });
-                        showMsg("✅ クラウドに記録を保存しました");
-                        setView('history');
-                    } catch (error) {
-                        showMsg("保存に失敗しました", true);
-                    } finally {
-                        setLoading(false);
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        showMsg("認証失敗。リロードしてください。", true);
                     }
                 };
+                initAuth();
+                const unsubscribe = auth.onAuthStateChanged((u) => {
+                    setUser(u);
+                    if (u) setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
 
-                const chartData = useMemo(() => {
-                    const filtered = logs
-                        .filter(l => l.machineName === selM)
-                        .sort((a, b) => new Date(a.date) - new Date(b.date));
-                    
-                    if (filtered.length === 0) return [];
-                    const startW = Number(filtered[0].weight);
-                    const targetW = startW * 1.2;
-                    const totalD = (END_DATE - START_DATE) / 86400000;
-                    
-                    return filtered.map(l => {
-                        const d = (new Date(l.date) - START_DATE) / 86400000;
-                        return { 
-                            date: new Date(l.date).toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), 
-                            real: Number(l.weight), 
-                            ideal: Math.round((startW + (targetW - startW) * (Math.max(0, d) / totalD)) * 10) / 10 
-                        };
+            // 2. クラウドデータのリアルタイム同期
+            useEffect(() => {
+                if (!user) return;
+                
+                const logsCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('training_logs');
+                
+                // Firestoreから全件取得してJS側でソート
+                const unsubscribe = logsCollection.onSnapshot((snapshot) => {
+                    const data = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data(),
+                        date: doc.data().date?.toDate().toISOString() || new Date().toISOString()
+                    }));
+                    setLogs(data.sort((a, b) => new Date(b.date) - new Date(a.date)));
+                }, (err) => {
+                    console.error("Firestore Error:", err);
+                    showMsg("データの同期に失敗しました", true);
+                });
+
+                return () => unsubscribe();
+            }, [user]);
+
+            const saveLog = async () => {
+                if (!user) return;
+                setLoading(true);
+                try {
+                    const logsCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('training_logs');
+                    await logsCollection.add({
+                        machineName: selM,
+                        weight: Number(weight),
+                        reps: Number(reps),
+                        sets: Number(sets),
+                        date: firebase.firestore.Timestamp.now(),
+                        userId: user.uid
                     });
-                }, [logs, selM]);
-
-                if (!user) {
-                    return (
-                        <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-blue-500">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
-                            <p className="font-bold tracking-widest text-xs uppercase">Connecting to Cloud...</p>
-                        </div>
-                    );
+                    showMsg("✅ クラウドへ同期完了");
+                    setView('history');
+                } catch (error) {
+                    showMsg("保存失敗: " + error.message, true);
+                } finally {
+                    setLoading(false);
                 }
+            };
 
-                return (
-                    <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 overflow-x-hidden animate-in">
-                        {message && (
-                            <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 ${message.isError ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>
-                                {message.txt}
+            const chartData = useMemo(() => {
+                const filtered = logs
+                    .filter(l => l.machineName === selM)
+                    .sort((a, b) => new Date(a.date) - new Date(b.date));
+                
+                if (filtered.length === 0) return [];
+                const startW = Number(filtered[0].weight);
+                const targetW = startW * 1.2;
+                const totalD = (END_DATE - START_DATE) / 86400000;
+                
+                return filtered.map(l => {
+                    const d = (new Date(l.date) - START_DATE) / 86400000;
+                    return { 
+                        date: new Date(l.date).toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), 
+                        real: Number(l.weight), 
+                        ideal: Math.round((startW + (targetW - startW) * (Math.max(0, d) / totalD)) * 10) / 10 
+                    };
+                });
+            }, [logs, selM]);
+
+            if (!user) return null; // 認証待ち
+
+            return (
+                <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 overflow-x-hidden animate-in">
+                    {/* トースト通知 */}
+                    {message && (
+                        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 ${message.isError ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>
+                            {message.txt}
+                        </div>
+                    )}
+
+                    <header className="py-8 flex justify-between items-center max-w-md mx-auto">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-cloud text-xl"></i></div>
+                            <div>
+                                <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Cloud Sync v7.7</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <div className="flex items-center gap-1.5 justify-end">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                <span className="text-[10px] text-green-500 font-black uppercase">Live</span>
+                            </div>
+                            <span className="text-[8px] text-slate-600 font-mono">ID: {user.uid.slice(0,6)}</span>
+                        </div>
+                    </header>
+
+                    <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
+                        {['input', 'history', 'trends', 'guide'].map(t => (
+                            <button key={t} onClick={() => setView(t)} className={"flex-1 py-3 px-1 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all " + (view === t ? 'active-tab shadow-lg' : 'text-slate-500')}>{t}</button>
+                        ))}
+                    </nav>
+
+                    <main className="max-w-md mx-auto">
+                        {view === 'input' && (
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 animate-in">
+                                <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                <div className="grid grid-cols-3 gap-4">
+                                    {[{l:'Kg', v:weight, s:setWeight}, {l:'Reps', v:reps, s:setReps}, {l:'Sets', v:sets, s:setSets}].map(f => (
+                                        <div key={f.l} className="text-center">
+                                            <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block">{f.l}</label>
+                                            <input type="number" step="0.5" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-lg border border-slate-700 outline-none text-white" />
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">
+                                    {loading ? 'CLOUD SYNCING...' : 'RECORD & FORGE'}
+                                </button>
                             </div>
                         )}
 
-                        <header className="py-8 flex justify-between items-center max-w-md mx-auto">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-cloud text-xl"></i></div>
-                                <div>
-                                    <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Firebase Edition v7.6</p>
+                        {view === 'history' && (
+                            <div className="space-y-4 animate-in">
+                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase">No cloud records yet</div> : logs.map(log => (
+                                    <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
+                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{new Date(log.date).toLocaleDateString()}</div></div>
+                                        <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {view === 'trends' && (
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
+                                <div className="flex justify-between items-center mb-6"><h2 className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1 text-blue-400">Growth Path</h2></div>
+                                <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl mb-8 border border-slate-700 font-black text-white outline-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                <div className="h-72 -ml-4">
+                                    {chartData.length >= 1 ? (
+                                        <Recharts.ResponsiveContainer width="100%" height="100%">
+                                            <Recharts.ComposedChart data={chartData}>
+                                                <defs><linearGradient id="rG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                                                <Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" /><Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} /><Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
+                                                <Recharts.Area type="monotone" dataKey="real" stroke="#3b82f6" fill="url(#rG)" strokeWidth={4} dot={{r: 5, fill: '#3b82f6'}} />
+                                                <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                                            </Recharts.ComposedChart>
+                                        </Recharts.ResponsiveContainer>
+                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need records to see curve.</p></div>}
                                 </div>
                             </div>
-                            <div className="text-right">
-                                <span className="text-[10px] text-green-500 font-bold">ONLINE</span>
+                        )}
+
+                        {view === 'guide' && (
+                            <div className="space-y-4 animate-in">
+                                {ROUTINE.map(r => (
+                                    <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg">
+                                        <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span><span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
+                                        <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[11px] px-3 py-2 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>)}</div>
+                                    </div>
+                                ))}
                             </div>
-                        </header>
-
-                        <nav className="max-w-md mx-auto mb-6 flex bg-slate-900 rounded-2xl p-1.5 border border-slate-800 shadow-xl overflow-x-auto no-scrollbar">
-                            {['input', 'history', 'trends', 'guide'].map(t => (
-                                <button key={t} onClick={() => setView(t)} className={"flex-1 py-3 px-1 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all " + (view === t ? 'active-tab shadow-lg' : 'text-slate-500')}>{t}</button>
-                            ))}
-                        </nav>
-
-                        <main className="max-w-md mx-auto">
-                            {view === 'input' && (
-                                <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 animate-in">
-                                    <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
-                                    <div className="grid grid-cols-3 gap-4">
-                                        {[{l:'Kg', v:weight, s:setWeight}, {l:'Reps', v:reps, s:setReps}, {l:'Sets', v:sets, s:setSets}].map(f => (
-                                            <div key={f.l} className="text-center">
-                                                <label className="text-[9px] text-slate-500 uppercase font-black mb-2 block">{f.l}</label>
-                                                <input type="number" step="0.5" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl text-center font-black text-lg border border-slate-700 outline-none text-white" />
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">
-                                        {loading ? 'SYNCING...' : 'RECORD & FORGE'}
-                                    </button>
-                                </div>
-                            )}
-
-                            {view === 'history' && (
-                                <div className="space-y-4 animate-in">
-                                    {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase">No cloud logs</div> : logs.map(log => (
-                                        <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
-                                            <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{new Date(log.date).toLocaleDateString()}</div></div>
-                                            <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {view === 'trends' && (
-                                <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 shadow-2xl animate-in">
-                                    <div className="flex justify-between items-center mb-6"><h2 className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1 text-blue-400">Growth Path</h2></div>
-                                    <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl mb-8 border border-slate-700 font-black text-white outline-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
-                                    <div className="h-72 -ml-4">
-                                        {chartData.length >= 1 ? (
-                                            <window.Recharts.ResponsiveContainer width="100%" height="100%">
-                                                <window.Recharts.ComposedChart data={chartData}>
-                                                    <defs><linearGradient id="rG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
-                                                    <window.Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" /><window.Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} /><window.Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
-                                                    <window.Recharts.Area type="monotone" dataKey="real" stroke="#3b82f6" fill="url(#rG)" strokeWidth={4} dot={{r: 5, fill: '#3b82f6'}} />
-                                                    <window.Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                                                </window.Recharts.ComposedChart>
-                                            </window.Recharts.ResponsiveContainer>
-                                        ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need records to see curve.</p></div>}
-                                    </div>
-                                </div>
-                            )}
-
-                            {view === 'guide' && (
-                                <div className="space-y-4 animate-in">
-                                    {ROUTINE.map(r => (
-                                        <div key={r.day} className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-lg">
-                                            <div className="flex justify-between items-center mb-4"><span className="bg-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase italic tracking-tighter">{r.day} Protocol</span><span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{r.title}</span></div>
-                                            <div className="flex flex-wrap gap-2">{r.items.map(i => <span key={i} className="bg-slate-800 text-[11px] px-3 py-2 rounded-xl border border-slate-700 font-bold text-slate-300">{i}</span>)}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </main>
-                    </div>
-                );
-            }
-
-            // Render
-            const root = window.ReactDOM.createRoot(document.getElementById('root'));
-            root.render(window.React.createElement(App));
-
-        } catch (fatal) {
-            logError("Boot: " + fatal.message);
+                        )}
+                    </main>
+                    <footer className="text-center py-12 opacity-20"><p className="text-[8px] font-black tracking-[0.5em] uppercase italic">Strong Mind, Strong Body</p></footer>
+                </div>
+            );
         }
+
+        // Render
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
