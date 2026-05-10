@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Cloud Edition v7.7</title>
-    <!-- 必要なライブラリの読み込み -->
+    <title>LEAN FORGE | Cloud Edition v7.8</title>
+    <!-- ライブラリ読み込み (順番が重要) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
     
-    <!-- Firebase (Compat版) -->
+    <!-- Firebase Compat SDKs (以前のツールで実績のある安定版) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
@@ -25,34 +25,66 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         select, input { background-color: #0f172a !important; color: white !important; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        #error-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #ff4444; padding: 40px; z-index: 9999; font-family: monospace; }
     </style>
 </head>
 <body>
     <div id="root">
-        <!-- 起動前に表示される画面 -->
-        <div class="flex flex-col items-center justify-center h-screen bg-slate-950">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
-            <p class="text-blue-400 font-black tracking-widest text-sm uppercase animate-pulse">Igniting Engine...</p>
+        <!-- 起動中のフォールバック表示 -->
+        <div id="loading-screen" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #020617;">
+            <div style="width: 40px; height: 40px; border: 4px solid #1e293b; border-bottom-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <p style="margin-top: 20px; color: #3b82f6; font-weight: 900; letter-spacing: 2px; font-size: 14px; text-transform: uppercase;">Booting System...</p>
         </div>
     </div>
+
+    <!-- エラー発生時の緊急表示エリア -->
+    <div id="error-overlay">
+        <h2 style="font-size: 20px; margin-bottom: 20px;">🚨 システム起動エラー</h2>
+        <div id="error-message" style="background: #111; padding: 15px; border-radius: 8px; border: 1px solid #333;"></div>
+        <p style="margin-top: 20px; color: #666; font-size: 12px;">このメッセージをポラリスに伝えてください。</p>
+    </div>
+
+    <style>
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
 
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- Firebase 初期化設定 ---
-        const firebaseConfig = JSON.parse(__firebase_config);
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
-        const db = firebase.firestore();
-        const auth = firebase.auth();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-cloud';
+        // --- 安全な初期化処理 ---
+        const initializeSystem = () => {
+            try {
+                // Configの安全な取得
+                let config;
+                if (typeof __firebase_config !== 'undefined') {
+                    config = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
+                } else {
+                    throw new Error("Firebase Config (__firebase_config) is missing.");
+                }
+
+                if (!window.firebase.apps.length) {
+                    window.firebase.initializeApp(config);
+                }
+                
+                return {
+                    db: window.firebase.firestore(),
+                    auth: window.firebase.auth(),
+                    appId: typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-v1'
+                };
+            } catch (err) {
+                document.getElementById('error-overlay').style.display = 'block';
+                document.getElementById('error-message').innerText = err.message;
+                throw err;
+            }
+        };
+
+        const { db, auth, appId } = initializeSystem();
 
         // --- 定数 ---
+        const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
         const START_DATE = new Date("2026-05-18");
         const END_DATE = new Date("2026-08-31");
-        const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
-        
+
         const ROUTINE = [
             { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
             { day: "Day B", title: "背中・腕裏 (Pull)", items: ["ラットマシン", "ローロー", "ローワーバック", "ロータリートルソー"] },
@@ -68,14 +100,14 @@
             const [sets, setSets] = useState(3);
             const [view, setView] = useState('input');
             const [loading, setLoading] = useState(true);
-            const [message, setMessage] = useState(null);
+            const [toast, setToast] = useState(null);
 
-            const showMsg = (txt, isError = false) => {
-                setMessage({ txt, isError });
-                setTimeout(() => setMessage(null), 3000);
+            const showToast = (txt, isError = false) => {
+                setToast({ txt, isError });
+                setTimeout(() => setToast(null), 3000);
             };
 
-            // 1. 匿名認証 (社用車予約ツールと同じ方式)
+            // 1. 認証 (Rule 3)
             useEffect(() => {
                 const initAuth = async () => {
                     try {
@@ -85,35 +117,32 @@
                             await auth.signInAnonymously();
                         }
                     } catch (e) {
-                        console.error(e);
-                        showMsg("認証失敗。リロードしてください。", true);
+                        showToast("認証エラー: " + e.message, true);
                     }
                 };
                 initAuth();
                 const unsubscribe = auth.onAuthStateChanged((u) => {
                     setUser(u);
-                    if (u) setLoading(false);
+                    setLoading(false);
                 });
                 return () => unsubscribe();
             }, []);
 
-            // 2. クラウドデータのリアルタイム同期
+            // 2. データ同期 (Rule 1 & 2)
             useEffect(() => {
                 if (!user) return;
                 
                 const logsCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('training_logs');
                 
-                // Firestoreから全件取得してJS側でソート
                 const unsubscribe = logsCollection.onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(doc => ({
                         id: doc.id,
                         ...doc.data(),
-                        date: doc.data().date?.toDate().toISOString() || new Date().toISOString()
+                        date: doc.data().date?.toDate() || new Date()
                     }));
-                    setLogs(data.sort((a, b) => new Date(b.date) - new Date(a.date)));
+                    setLogs(data.sort((a, b) => b.date - a.date));
                 }, (err) => {
-                    console.error("Firestore Error:", err);
-                    showMsg("データの同期に失敗しました", true);
+                    showToast("同期エラー: " + err.message, true);
                 });
 
                 return () => unsubscribe();
@@ -129,13 +158,13 @@
                         weight: Number(weight),
                         reps: Number(reps),
                         sets: Number(sets),
-                        date: firebase.firestore.Timestamp.now(),
+                        date: window.firebase.firestore.Timestamp.now(),
                         userId: user.uid
                     });
-                    showMsg("✅ クラウドへ同期完了");
+                    showToast("✅ クラウドへ保存しました");
                     setView('history');
                 } catch (error) {
-                    showMsg("保存失敗: " + error.message, true);
+                    showToast("保存失敗: " + error.message, true);
                 } finally {
                     setLoading(false);
                 }
@@ -144,7 +173,7 @@
             const chartData = useMemo(() => {
                 const filtered = logs
                     .filter(l => l.machineName === selM)
-                    .sort((a, b) => new Date(a.date) - new Date(b.date));
+                    .sort((a, b) => a.date - b.date);
                 
                 if (filtered.length === 0) return [];
                 const startW = Number(filtered[0].weight);
@@ -154,38 +183,37 @@
                 return filtered.map(l => {
                     const d = (new Date(l.date) - START_DATE) / 86400000;
                     return { 
-                        date: new Date(l.date).toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), 
+                        date: l.date.toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), 
                         real: Number(l.weight), 
                         ideal: Math.round((startW + (targetW - startW) * (Math.max(0, d) / totalD)) * 10) / 10 
                     };
                 });
             }, [logs, selM]);
 
-            if (!user) return null; // 認証待ち
+            if (loading && !user) return null;
 
             return (
                 <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 overflow-x-hidden animate-in">
-                    {/* トースト通知 */}
-                    {message && (
-                        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 ${message.isError ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>
-                            {message.txt}
+                    {/* トースト表示 */}
+                    {toast && (
+                        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 ${toast.isError ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>
+                            {toast.txt}
                         </div>
                     )}
 
                     <header className="py-8 flex justify-between items-center max-w-md mx-auto">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-900/40"><i className="fas fa-cloud text-xl"></i></div>
+                            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-cloud text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Cloud Sync v7.7</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Cloud v7.8 Ultimate</p>
                             </div>
                         </div>
-                        <div className="text-right">
-                            <div className="flex items-center gap-1.5 justify-end">
-                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                <span className="text-[10px] text-green-500 font-black uppercase">Live</span>
-                            </div>
-                            <span className="text-[8px] text-slate-600 font-mono">ID: {user.uid.slice(0,6)}</span>
+                        <div className="text-right flex flex-col items-end">
+                            <span className="text-[10px] text-green-500 font-black flex items-center gap-1.5 uppercase">
+                                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Online
+                            </span>
+                            <span className="text-[8px] text-slate-600 font-mono tracking-tighter">ID:{user?.uid.slice(0,8)}</span>
                         </div>
                     </header>
 
@@ -198,7 +226,10 @@
                     <main className="max-w-md mx-auto">
                         {view === 'input' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 animate-in">
-                                <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] text-slate-500 uppercase font-black ml-1">Exercise Selection</label>
+                                    <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                </div>
                                 <div className="grid grid-cols-3 gap-4">
                                     {[{l:'Kg', v:weight, s:setWeight}, {l:'Reps', v:reps, s:setReps}, {l:'Sets', v:sets, s:setSets}].map(f => (
                                         <div key={f.l} className="text-center">
@@ -208,16 +239,16 @@
                                     ))}
                                 </div>
                                 <button onClick={saveLog} disabled={loading} className="w-full py-5.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl font-black text-white uppercase tracking-widest shadow-xl shadow-blue-900/50 active:scale-[0.98] transition-all">
-                                    {loading ? 'CLOUD SYNCING...' : 'RECORD & FORGE'}
+                                    {loading ? 'FORGING...' : 'RECORD & FORGE'}
                                 </button>
                             </div>
                         )}
 
                         {view === 'history' && (
                             <div className="space-y-4 animate-in">
-                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase">No cloud records yet</div> : logs.map(log => (
+                                {logs.length === 0 ? <div className="text-center py-24 opacity-20 font-black text-[10px] uppercase">No logs detected</div> : logs.map(log => (
                                     <div key={log.id} className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center border border-slate-800 shadow-xl">
-                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{new Date(log.date).toLocaleDateString()}</div></div>
+                                        <div><div className="font-black text-slate-200 text-[14px]">{log.machineName}</div><div className="text-[9px] text-slate-500 font-black mt-2 uppercase tracking-widest">{log.date.toLocaleDateString()}</div></div>
                                         <div className="text-right"><div className="flex items-baseline justify-end"><span className="text-2xl font-black text-blue-500 tracking-tighter">{log.weight}</span><span className="text-[10px] text-slate-500 ml-1 uppercase">kg</span></div><div className="text-[11px] font-black text-slate-400 italic opacity-80">{log.reps}R × {log.sets}S</div></div>
                                     </div>
                                 ))}
@@ -238,7 +269,7 @@
                                                 <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                                             </Recharts.ComposedChart>
                                         </Recharts.ResponsiveContainer>
-                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need records to see curve.</p></div>}
+                                    ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need records for analysis.</p></div>}
                                 </div>
                             </div>
                         )}
@@ -259,7 +290,7 @@
             );
         }
 
-        // Render
+        // Render with React 18
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
