@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LEAN FORGE | Cloud Edition v7.8</title>
-    <!-- ライブラリ読み込み (順番が重要) -->
+    <title>LEAN FORGE | Cloud Edition v7.9</title>
+    
+    <!-- 基本ライブラリ -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
     
-    <!-- Firebase Compat SDKs (以前のツールで実績のある安定版) -->
+    <!-- Firebase 安定版 (Compat) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
@@ -25,76 +26,45 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         select, input { background-color: #0f172a !important; color: white !important; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        #error-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #ff4444; padding: 40px; z-index: 9999; font-family: monospace; }
+        
+        /* 起動画面のスタイル */
+        #boot-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #020617; }
+        .loader { width: 48px; height: 48px; border: 5px solid #1e293b; border-bottom-color: #3b82f6; border-radius: 50%; display: inline-block; animation: rotation 1s linear infinite; }
+        @keyframes rotation { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+        #error-display { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #900; color: #fff; padding: 30px; z-index: 10000; overflow-y: auto; }
     </style>
 </head>
 <body>
     <div id="root">
-        <!-- 起動中のフォールバック表示 -->
-        <div id="loading-screen" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #020617;">
-            <div style="width: 40px; height: 40px; border: 4px solid #1e293b; border-bottom-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-            <p style="margin-top: 20px; color: #3b82f6; font-weight: 900; letter-spacing: 2px; font-size: 14px; text-transform: uppercase;">Booting System...</p>
+        <!-- 初期表示 -->
+        <div id="boot-screen">
+            <span class="loader"></span>
+            <p style="margin-top: 24px; color: #3b82f6; font-weight: 900; letter-spacing: 0.2em; font-size: 12px; text-transform: uppercase;">System Initializing...</p>
+            <p style="margin-top: 10px; color: #475569; font-size: 10px;">Ver 7.9 Absolute Cloud</p>
         </div>
     </div>
 
-    <!-- エラー発生時の緊急表示エリア -->
-    <div id="error-overlay">
-        <h2 style="font-size: 20px; margin-bottom: 20px;">🚨 システム起動エラー</h2>
-        <div id="error-message" style="background: #111; padding: 15px; border-radius: 8px; border: 1px solid #333;"></div>
-        <p style="margin-top: 20px; color: #666; font-size: 12px;">このメッセージをポラリスに伝えてください。</p>
+    <!-- 強制エラー表示用エリア -->
+    <div id="error-display">
+        <h1 style="font-size: 24px; font-weight: 900; margin-bottom: 20px;">🚨 起動に失敗しました</h1>
+        <div id="error-content" style="background: rgba(0,0,0,0.3); padding: 20px; border-radius: 12px; font-family: monospace; font-size: 14px; line-height: 1.6;"></div>
+        <button onclick="location.reload()" style="margin-top: 30px; background: white; color: #900; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 900;">再読み込みを試す</button>
     </div>
-
-    <style>
-        @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
 
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- 安全な初期化処理 ---
-        const initializeSystem = () => {
-            try {
-                // Configの安全な取得
-                let config;
-                if (typeof __firebase_config !== 'undefined') {
-                    config = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
-                } else {
-                    throw new Error("Firebase Config (__firebase_config) is missing.");
-                }
-
-                if (!window.firebase.apps.length) {
-                    window.firebase.initializeApp(config);
-                }
-                
-                return {
-                    db: window.firebase.firestore(),
-                    auth: window.firebase.auth(),
-                    appId: typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-v1'
-                };
-            } catch (err) {
-                document.getElementById('error-overlay').style.display = 'block';
-                document.getElementById('error-message').innerText = err.message;
-                throw err;
-            }
+        // --- グローバルエラーキャッチ ---
+        window.onerror = function(msg, url, line) {
+            document.getElementById('error-display').style.display = 'block';
+            document.getElementById('error-content').innerText = `メッセージ: ${msg}\n場所: ${url}\n行: ${line}`;
+            return false;
         };
-
-        const { db, auth, appId } = initializeSystem();
-
-        // --- 定数 ---
-        const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
-        const START_DATE = new Date("2026-05-18");
-        const END_DATE = new Date("2026-08-31");
-
-        const ROUTINE = [
-            { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
-            { day: "Day B", title: "背中・腕裏 (Pull)", items: ["ラットマシン", "ローロー", "ローワーバック", "ロータリートルソー"] },
-            { day: "Day C", title: "足・腹筋 (Legs/Abs)", items: ["レッグプレス", "レッグエクステンション", "レッグカール", "トータルアブドミナル", "マルチヒップ", "アダクター", "アブダクター"] }
-        ];
 
         function App() {
             const [user, setUser] = useState(null);
             const [logs, setLogs] = useState([]);
-            const [selM, setSelM] = useState(MACHINE_LIST[0]);
+            const [selM, setSelM] = useState("ショルダープレス");
             const [weight, setWeight] = useState(20);
             const [reps, setReps] = useState(10);
             const [sets, setSets] = useState(3);
@@ -102,63 +72,87 @@
             const [loading, setLoading] = useState(true);
             const [toast, setToast] = useState(null);
 
+            // 定数
+            const MACHINE_LIST = ["ショルダープレス", "ペクトラル", "レッグエクステンション", "レッグカール", "チェストプレス", "ローワーバック", "アブダクター", "アダクター", "ローロー", "レッグプレス", "トータルアブドミナル", "ロータリートルソー", "マルチヒップ", "ラットマシン", "ベンチプレス", "スクワット", "ダンベルフライ", "サイドレイズ", "ワンハンドローイング"];
+            const START_DATE = new Date("2026-05-18");
+            const END_DATE = new Date("2026-08-31");
+            const ROUTINE = [
+                { day: "Day A", title: "胸・肩・腕 (Push)", items: ["チェストプレス", "ペクトラル", "ショルダープレス", "サイドレイズ", "ベンチプレス", "ダンベルフライ"] },
+                { day: "Day B", title: "背中・腕裏 (Pull)", items: ["ラットマシン", "ローロー", "ローワーバック", "ロータリートルソー"] },
+                { day: "Day C", title: "足・腹筋 (Legs/Abs)", items: ["レッグプレス", "レッグエクステンション", "レッグカール", "トータルアブドミナル", "マルチヒップ", "アダクター", "アブダクター"] }
+            ];
+
             const showToast = (txt, isError = false) => {
                 setToast({ txt, isError });
                 setTimeout(() => setToast(null), 3000);
             };
 
-            // 1. 認証 (Rule 3)
+            // --- Firebase & Auth 初期化 (useEffect内で安全に実行) ---
             useEffect(() => {
-                const initAuth = async () => {
+                const startSystem = async () => {
                     try {
+                        // Configの取得
+                        if (typeof __firebase_config === 'undefined') {
+                            throw new Error("Firebaseの設定情報(__firebase_config)が見つかりません。");
+                        }
+                        const config = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
+                        
+                        // Firebase初期化
+                        if (!firebase.apps.length) {
+                            firebase.initializeApp(config);
+                        }
+                        const db = firebase.firestore();
+                        const auth = firebase.auth();
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-v1';
+
+                        // 認証実行
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await auth.signInWithCustomToken(__initial_auth_token);
                         } else {
                             await auth.signInAnonymously();
                         }
+
+                        // 認証監視
+                        auth.onAuthStateChanged((u) => {
+                            setUser(u);
+                            setLoading(false);
+                            if (u) {
+                                // データ購読開始
+                                const logsCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('training_logs');
+                                logsCollection.onSnapshot((snapshot) => {
+                                    const data = snapshot.docs.map(doc => ({
+                                        id: doc.id,
+                                        ...doc.data(),
+                                        date: doc.data().date?.toDate() || new Date()
+                                    }));
+                                    setLogs(data.sort((a, b) => b.date - a.date));
+                                }, (err) => showToast("同期エラー: " + err.message, true));
+                            }
+                        });
+
                     } catch (e) {
-                        showToast("認証エラー: " + e.message, true);
+                        document.getElementById('error-display').style.display = 'block';
+                        document.getElementById('error-content').innerText = "初期化エラー: " + e.message;
                     }
                 };
-                initAuth();
-                const unsubscribe = auth.onAuthStateChanged((u) => {
-                    setUser(u);
-                    setLoading(false);
-                });
-                return () => unsubscribe();
+
+                startSystem();
             }, []);
-
-            // 2. データ同期 (Rule 1 & 2)
-            useEffect(() => {
-                if (!user) return;
-                
-                const logsCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('training_logs');
-                
-                const unsubscribe = logsCollection.onSnapshot((snapshot) => {
-                    const data = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data(),
-                        date: doc.data().date?.toDate() || new Date()
-                    }));
-                    setLogs(data.sort((a, b) => b.date - a.date));
-                }, (err) => {
-                    showToast("同期エラー: " + err.message, true);
-                });
-
-                return () => unsubscribe();
-            }, [user]);
 
             const saveLog = async () => {
                 if (!user) return;
                 setLoading(true);
                 try {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'lean-forge-v1';
+                    const db = firebase.firestore();
                     const logsCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('training_logs');
+                    
                     await logsCollection.add({
                         machineName: selM,
                         weight: Number(weight),
                         reps: Number(reps),
                         sets: Number(sets),
-                        date: window.firebase.firestore.Timestamp.now(),
+                        date: firebase.firestore.Timestamp.now(),
                         userId: user.uid
                     });
                     showToast("✅ クラウドへ保存しました");
@@ -190,11 +184,18 @@
                 });
             }, [logs, selM]);
 
-            if (loading && !user) return null;
+            // ロード画面
+            if (loading && !user) {
+                return (
+                    <div id="boot-screen">
+                        <span class="loader"></span>
+                        <p style={{marginTop: '24px', color: '#3b82f6', fontWeight: 900, letterSpacing: '0.2em', fontSize: '12px'}}>Connecting Cloud...</p>
+                    </div>
+                );
+            }
 
             return (
                 <div className="min-h-screen bg-slate-950 text-slate-100 pb-24 px-4 overflow-x-hidden animate-in">
-                    {/* トースト表示 */}
                     {toast && (
                         <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 ${toast.isError ? 'bg-red-900 border-red-500' : 'bg-blue-900 border-blue-500'}`}>
                             {toast.txt}
@@ -206,14 +207,13 @@
                             <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg"><i className="fas fa-cloud text-xl"></i></div>
                             <div>
                                 <h1 className="text-2xl font-black italic uppercase tracking-tighter">LEAN FORGE</h1>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Cloud v7.8 Ultimate</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">v7.9 Absolute Cloud</p>
                             </div>
                         </div>
-                        <div className="text-right flex flex-col items-end">
+                        <div className="text-right">
                             <span className="text-[10px] text-green-500 font-black flex items-center gap-1.5 uppercase">
                                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Online
                             </span>
-                            <span className="text-[8px] text-slate-600 font-mono tracking-tighter">ID:{user?.uid.slice(0,8)}</span>
                         </div>
                     </header>
 
@@ -226,10 +226,7 @@
                     <main className="max-w-md mx-auto">
                         {view === 'input' && (
                             <div className="bg-slate-900 rounded-[2.5rem] p-8 border border-slate-800 space-y-7 animate-in">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] text-slate-500 uppercase font-black ml-1">Exercise Selection</label>
-                                    <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
-                                </div>
+                                <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4.5 bg-slate-800 rounded-2xl border border-slate-700 font-bold outline-none text-white appearance-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
                                 <div className="grid grid-cols-3 gap-4">
                                     {[{l:'Kg', v:weight, s:setWeight}, {l:'Reps', v:reps, s:setReps}, {l:'Sets', v:sets, s:setSets}].map(f => (
                                         <div key={f.l} className="text-center">
@@ -261,14 +258,14 @@
                                 <select value={selM} onChange={e => setSelM(e.target.value)} className="w-full p-4 bg-slate-800 rounded-2xl mb-8 border border-slate-700 font-black text-white outline-none">{MACHINE_LIST.map(m => <option key={m} value={m}>{m}</option>)}</select>
                                 <div className="h-72 -ml-4">
                                     {chartData.length >= 1 ? (
-                                        <Recharts.ResponsiveContainer width="100%" height="100%">
-                                            <Recharts.ComposedChart data={chartData}>
+                                        <window.Recharts.ResponsiveContainer width="100%" height="100%">
+                                            <window.Recharts.ComposedChart data={chartData}>
                                                 <defs><linearGradient id="rG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
-                                                <Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" /><Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} /><Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
-                                                <Recharts.Area type="monotone" dataKey="real" stroke="#3b82f6" fill="url(#rG)" strokeWidth={4} dot={{r: 5, fill: '#3b82f6'}} />
-                                                <Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                                            </Recharts.ComposedChart>
-                                        </Recharts.ResponsiveContainer>
+                                                <window.Recharts.CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" /><window.Recharts.XAxis dataKey="date" fontSize={10} tick={{fill:'#64748b'}} axisLine={false} tickLine={false} /><window.Recharts.YAxis fontSize={10} tick={{fill:'#64748b'}} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
+                                                <window.Recharts.Area type="monotone" dataKey="real" stroke="#3b82f6" fill="url(#rG)" strokeWidth={4} dot={{r: 5, fill: '#3b82f6'}} />
+                                                <window.Recharts.Line type="monotone" dataKey="ideal" stroke="#475569" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                                            </window.Recharts.ComposedChart>
+                                        </window.Recharts.ResponsiveContainer>
                                     ) : <div className="h-full flex flex-col items-center justify-center opacity-20 text-center"><i className="fas fa-chart-line text-4xl mb-2"></i><p className="text-[10px] uppercase font-black tracking-widest leading-loose">Need records for analysis.</p></div>}
                                 </div>
                             </div>
@@ -290,9 +287,9 @@
             );
         }
 
-        // Render with React 18
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // Render
+        const root = window.ReactDOM.createRoot(document.getElementById('root'));
+        root.render(window.React.createElement(App));
     </script>
 </body>
 </html>
